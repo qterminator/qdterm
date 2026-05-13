@@ -76,51 +76,6 @@ public:
     void setAutoClose(bool);
     QString title() const;
     QString icon() const;
-    void setBlinkingCursor(bool blink);
-    void setBoldIntense(bool boldIntense);
-    void setDrawLineChars(bool drawLineChars);
-    int screenLinesCount();
-    int historySize() const;
-    void selectAll();
-    void bracketText(QString &text);
-    int getMargin() const;
-    void setMargin(int);
-
-    // Color table access (20 entries: 2 defaults + 8 normal + 8 intense + 2 unused)
-    // Returns list of (r,g,b) tuples for all TABLE_COLORS entries
-    SIP_PYOBJECT getColorTable();
-%MethodCode
-        #include "TerminalDisplay.h"
-        // Access the internal TerminalDisplay via QTermWidget's layout
-        Konsole::TerminalDisplay *display = sipCpp->findChild<Konsole::TerminalDisplay*>();
-        if (display) {
-            const ColorEntry *table = display->colorTable();
-            PyObject *list = PyList_New(TABLE_COLORS);
-            for (int i = 0; i < TABLE_COLORS; i++) {
-                QColor c = table[i].color;
-                PyObject *tuple = Py_BuildValue("(iii)", c.red(), c.green(), c.blue());
-                PyList_SetItem(list, i, tuple);
-            }
-            sipRes = list;
-        } else {
-            sipRes = PyList_New(0);
-        }
-%End
-
-    // Set a single color in the table by index and (r,g,b)
-    void setColorEntry(int index, int r, int g, int b);
-%MethodCode
-        #include "TerminalDisplay.h"
-        Konsole::TerminalDisplay *display = sipCpp->findChild<Konsole::TerminalDisplay*>();
-        if (display && a0 >= 0 && a0 < TABLE_COLORS) {
-            ColorEntry table[TABLE_COLORS];
-            const ColorEntry *current = display->colorTable();
-            for (int i = 0; i < TABLE_COLORS; i++)
-                table[i] = current[i];
-            table[a0].color = QColor(a1, a2, a3);
-            display->setColorTable(table);
-        }
-%End
 signals:
     void finished();
     void copyAvailable(bool);

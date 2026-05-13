@@ -64,10 +64,28 @@ fi
 
 sip-wheel --qmake "$QMAKE"
 
-WHL=$(ls -t QTermWidget-*.whl | head -1)
+# sip-wheel emits {project-name}-*.whl. The pyproject "name" has varied between
+# vendor versions (QTermWidget / qtermwidget), so match case-insensitively.
+shopt -s nullglob nocaseglob
+wheels=( qtermwidget-*.whl )
+shopt -u nullglob nocaseglob
+if [ ${#wheels[@]} -eq 0 ]; then
+    echo "Error: no QTermWidget wheel produced by sip-wheel"
+    exit 1
+fi
+WHL="${wheels[0]}"
 echo "Built: $WHL"
-pip install --user --force-reinstall "$WHL" 2>&1 || \
-    pip install --break-system-packages --force-reinstall "$WHL"
+# --no-deps avoids pulling a newer PyPI PyQt6 over the distro one, which would
+# need a Qt private API absent from system libQt6Core.
+#
+# Install destination: venv if active, else --user, else --break-system-packages
+# for PEP 668 distro Pythons.
+if [ -n "${VIRTUAL_ENV:-}" ]; then
+    pip install --no-deps --force-reinstall "$WHL"
+else
+    pip install --no-deps --user --force-reinstall "$WHL" 2>&1 || \
+        pip install --no-deps --break-system-packages --force-reinstall "$WHL"
+fi
 
 rm -rf "$BUILD_DIR"
 echo "Done. Verify with: python3 -c 'from QTermWidget import QTermWidget'"

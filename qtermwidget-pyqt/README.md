@@ -1,7 +1,7 @@
 # Vendored QTermWidget Python SIP bindings source
 
 This directory is a vendored copy of the `pyqt/` subdirectory from
-[lxqt/qtermwidget](https://github.com/lxqt/qtermwidget) (version 2.3.0).
+[lxqt/qtermwidget](https://github.com/lxqt/qtermwidget) (version 2.4.0).
 
 Only the SIP binding generator files are included — the actual C++
 QTermWidget library must be installed via your distro

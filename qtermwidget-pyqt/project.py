@@ -12,6 +12,4 @@ class QTermWidgetBindings(PyQtBindings):
 
     def apply_user_defaults(self, tool):
         self.libraries.append('qtermwidget6')
-        self.include_dirs.append('/usr/include/qtermwidget6')
-        self.include_dirs.append('/tmp/qtermwidget-src/lib')
         super().apply_user_defaults(tool)
