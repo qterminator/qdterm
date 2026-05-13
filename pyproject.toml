@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "qterminator"
+version = "0.1.0"
+description = "Qt port of Terminator terminal emulator"
+license = "GPL-3.0-only"
+requires-python = ">=3.10"
+dependencies = [
+    "PyQt6>=6.5",
+]
+
+[project.scripts]
+qterminator = "qterminator.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["qterminator*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+qt_api = "pyqt6"

@@ -1,0 +1,23 @@
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+dist/
+build/
+.venv/
+.eggs/
+*.whl
+.pytest_cache/
+
+# Log files and packaging artifacts
+*.log
+ci.log
+stage/
+*.deb
+*.rpm
+
+# Editor/OS cruft
+.vscode/
+.idea/
+*.swp
+.DS_Store
