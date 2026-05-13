@@ -1,0 +1,187 @@
+"""Plugin system for QTerminator.
+
+Plugins are Python modules placed in:
+  - Built-in: qterminator/plugins/
+  - User: ~/.config/qterminator/plugins/
+
+Each plugin module should define one or more classes extending:
+  - Plugin: base class with activate/deactivate lifecycle
+  - URLHandler: regex-based URL detection and handling
+  - MenuProvider: adds items to the terminal context menu
+  - OutputWatcher: reacts to terminal output
+"""
+
+import importlib
+import importlib.util
+import os
+import sys
+
+from qterminator.config import Config, CONFIG_DIR
+
+
+PLUGIN_DIRS = [
+    os.path.join(os.path.dirname(__file__), "plugins"),
+    os.path.join(CONFIG_DIR, "plugins"),
+]
+
+
+class Plugin:
+    """Base class for all plugins."""
+
+    name = "unnamed"
+    description = ""
+    version = "0.0"
+    capabilities = []
+
+    def activate(self, app_controller):
+        """Called when the plugin is enabled."""
+        pass
+
+    def deactivate(self):
+        """Called when the plugin is disabled."""
+        pass
+
+
+class URLHandler(Plugin):
+    """Plugin that matches URLs in terminal output."""
+
+    capabilities = ["url_handler"]
+    match_pattern = None  # regex string
+
+    def handle_url(self, url):
+        """Return the URL to open, or None to skip."""
+        return url
+
+
+class MenuProvider(Plugin):
+    """Plugin that adds context menu items.
+
+    Plugins set `category` to group their items under a submenu.
+    Standard categories (any string is allowed):
+      "Edit"       — clipboard, paste, copy variants
+      "Transform"  — text transformations (base64, hash, json, etc.)
+      "Export"     — PDF, HTML, screenshot, print
+      "Process"    — process control (signals)
+      "Schedule"   — timers, scheduled commands
+      "Workspace"  — workspace switching, sessions
+      "View"       — display options
+      "Plugins"    — default; everything uncategorized
+    """
+
+    capabilities = ["menu_provider"]
+    category = "Plugins"
+
+    def get_menu_items(self, terminal):
+        """Return list of (label, callback) tuples."""
+        return []
+
+
+class OutputWatcher(Plugin):
+    """Plugin that reacts to terminal output."""
+
+    capabilities = ["output_watcher"]
+
+    def on_output(self, terminal, text):
+        """Called when new output appears. May be batched."""
+        pass
+
+
+class PluginManager:
+    """Discovers, loads, and manages plugins."""
+
+    def __init__(self):
+        self._available = {}  # name -> module
+        self._instances = {}  # name -> Plugin instance
+        self._enabled = set()
+        self._config = Config()
+
+    def discover(self):
+        """Scan plugin directories for available plugins."""
+        self._available.clear()
+        for plugin_dir in PLUGIN_DIRS:
+            if not os.path.isdir(plugin_dir):
+                continue
+            for filename in os.listdir(plugin_dir):
+                if filename.endswith(".py") and not filename.startswith("_"):
+                    name = filename[:-3]
+                    path = os.path.join(plugin_dir, filename)
+                    self._available[name] = path
+
+    def available_plugins(self):
+        """Return dict of name -> file path for discovered plugins."""
+        return dict(self._available)
+
+    def enabled_plugins(self):
+        """Return set of enabled plugin names."""
+        return set(self._enabled)
+
+    def load(self, name):
+        """Load and instantiate a plugin by name."""
+        if name in self._instances:
+            return self._instances[name]
+
+        path = self._available.get(name)
+        if not path:
+            return None
+
+        spec = importlib.util.spec_from_file_location(
+            f"qterminator.plugins.{name}", path
+        )
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        # Find Plugin subclasses in the module
+        instances = []
+        for attr_name in dir(module):
+            attr = getattr(module, attr_name)
+            if (isinstance(attr, type)
+                    and issubclass(attr, Plugin)
+                    and attr is not Plugin
+                    and attr is not URLHandler
+                    and attr is not MenuProvider
+                    and attr is not OutputWatcher):
+                instances.append(attr())
+
+        if instances:
+            # Store first plugin instance as the main one
+            self._instances[name] = instances[0]
+            # Store all instances for capability lookup
+            if not hasattr(self, '_all_instances'):
+                self._all_instances = []
+            self._all_instances.extend(instances)
+            return instances[0]
+        return None
+
+    def enable(self, name, app_controller=None):
+        """Enable a plugin."""
+        instance = self.load(name)
+        if instance:
+            instance.activate(app_controller)
+            self._enabled.add(name)
+            return True
+        return False
+
+    def disable(self, name):
+        """Disable a plugin."""
+        instance = self._instances.get(name)
+        if instance:
+            instance.deactivate()
+            self._enabled.discard(name)
+
+    def get_by_capability(self, capability):
+        """Return all loaded plugin instances with the given capability."""
+        all_instances = getattr(self, '_all_instances', [])
+        return [p for p in all_instances
+                if capability in getattr(p, 'capabilities', [])]
+
+    def get_url_handlers(self):
+        """Return all loaded URLHandler instances."""
+        return self.get_by_capability("url_handler")
+
+    def get_menu_providers(self):
+        """Return all loaded MenuProvider instances."""
+        return self.get_by_capability("menu_provider")
+
+    def get_output_watchers(self):
+        """Return all loaded OutputWatcher instances."""
+        return self.get_by_capability("output_watcher")
