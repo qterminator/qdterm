@@ -63,7 +63,7 @@ DEFAULTS = {
         "search": "Ctrl+Shift+F",
         "reset": "Ctrl+Shift+R",
         "reset_clear": "Ctrl+Shift+G",
-        "preferences": "",
+        "preferences": "Ctrl+,",
         # View / splits
         "split_horizontal": "Ctrl+Shift+O",
         "split_vertical": "Ctrl+Shift+E",

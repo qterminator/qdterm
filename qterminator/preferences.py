@@ -8,9 +8,8 @@ from PyQt6.QtWidgets import (
     QDialogButtonBox, QHeaderView, QKeySequenceEdit, QLabel, QMenu,
     QFontComboBox, QWidget, QGroupBox, QDoubleSpinBox, QPushButton,
     QFontDialog, QFrame, QLineEdit, QListWidget, QListWidgetItem,
-    QStackedWidget, QScrollArea, QSplitter, QSizePolicy,
-    QStyledItemDelegate, QTableWidget, QTableWidgetItem,
-    QTreeWidget, QTreeWidgetItem,
+    QStackedWidget, QScrollArea,
+    QStyledItemDelegate, QTreeWidget, QTreeWidgetItem,
 )
 from PyQt6.QtCore import QModelIndex
 from PyQt6.QtGui import QBrush, QColor
@@ -164,7 +163,15 @@ class PreferencesDialog(QDialog):
         self._add_category(tr("Shortcuts"), self._build_shortcuts_page())
 
         self._category_list.currentRowChanged.connect(self._on_category_changed)
-        self._category_list.setCurrentRow(0)
+        # Restore last-selected category if it still exists.
+        last = self._config.get("general", "last_prefs_category", default="")
+        initial = 0
+        if last:
+            for i in range(self._category_list.count()):
+                if self._category_list.item(i).text() == last:
+                    initial = i
+                    break
+        self._category_list.setCurrentRow(initial)
 
         # ---- Footer buttons ----
         buttons = QDialogButtonBox(
@@ -193,6 +200,11 @@ class PreferencesDialog(QDialog):
         item = self._category_list.item(index)
         if item is not None:
             self._title.setText(item.text())
+            # Remember the selection so the next open lands here. Persist
+            # immediately rather than on Apply so cancelling still keeps the
+            # navigational state (the underlying setting is purely UI).
+            self._config.set("general", "last_prefs_category", item.text())
+            self._config.save()
 
     def _filter_categories(self, text: str) -> None:
         needle = text.strip().lower()

@@ -50,6 +50,7 @@ ALL_SHORTCUTS = {
     "Ctrl+Shift+F":  "search",
     "Ctrl+Shift+R":  "reset",
     "Ctrl+Shift+G":  "reset_clear",
+    "Ctrl+,":         "preferences",
     "Ctrl+Shift+O":  "split_horizontal",
     "Ctrl+Shift+E":  "split_vertical",
     "Meta+R":         "rotate_splits",
@@ -196,6 +197,15 @@ class TestShortcutReset:
     def test_reset_clear(self, window):
         window._reset_clear()
         _mark("reset_clear")
+
+
+class TestShortcutPreferences:
+    def test_preferences_action_exists(self, window):
+        # _open_preferences would exec() a modal dialog; just check the
+        # action is registered with the configured key.
+        assert "preferences" in window._actions
+        assert window._actions["preferences"].shortcut().toString() == "Ctrl+,"
+        _mark("preferences")
 
 
 class TestShortcutSplits:
