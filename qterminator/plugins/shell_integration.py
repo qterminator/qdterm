@@ -63,6 +63,25 @@ class CommandRecord:
     finished_at: float               # time.time() of ;D (command-finish)
     cwd: Optional[str]               # reported via OSC 7 at command start
     output_seq_range: tuple[int, int]  # ShadowScreen seq range [start,end]
+    # Telemetry attached by the command_telemetry plugin after ;D; opaque
+    # to shell_integration itself. ``None`` when the plugin isn't loaded.
+    telemetry: Optional[dict] = None
+
+
+@dataclass
+class CommandStartEvent:
+    """Emitted when OSC 133 ;C arrives — the moment a command starts
+    executing. Subscribers (e.g. command_telemetry) use it to stamp
+    monotonic start times so duration is exact for short commands
+    that would otherwise be invisible to a 2 s poller.
+
+    ``text`` is the typed command line when ``capture_command_text``
+    is on; otherwise None.
+    """
+    started_at: float                # time.time() at ;C
+    started_at_monotonic: float      # time.monotonic() at ;C
+    cwd: Optional[str]
+    text: Optional[str]
 
 
 @dataclass
@@ -158,13 +177,20 @@ class OSCParser:
 
     def __init__(self, history: CommandHistory,
                  capture_command_text: bool = False,
-                 on_command_finished: Optional[Callable[[CommandRecord], None]] = None):
+                 on_command_finished: Optional[Callable[[CommandRecord], None]] = None,
+                 on_command_started: Optional[Callable[[CommandStartEvent], None]] = None):
         self._history = history
         self._capture_text = capture_command_text
         self._carry = b""
         self._subscribers: list[Callable[[CommandRecord], None]] = []
+        # Parallel ;C subscriber list; fired the moment a command
+        # starts executing, so consumers like command_telemetry can
+        # snapshot a monotonic start time.
+        self._started_subscribers: list[Callable[[CommandStartEvent], None]] = []
         if on_command_finished is not None:
             self._subscribers.append(on_command_finished)
+        if on_command_started is not None:
+            self._started_subscribers.append(on_command_started)
 
     @property
     def history(self) -> CommandHistory:
@@ -176,6 +202,15 @@ class OSCParser:
     def remove_subscriber(self, cb: Callable[[CommandRecord], None]) -> None:
         try:
             self._subscribers.remove(cb)
+        except ValueError:
+            pass
+
+    def add_started_subscriber(self, cb: Callable[[CommandStartEvent], None]) -> None:
+        self._started_subscribers.append(cb)
+
+    def remove_started_subscriber(self, cb: Callable[[CommandStartEvent], None]) -> None:
+        try:
+            self._started_subscribers.remove(cb)
         except ValueError:
             pass
 
@@ -250,7 +285,12 @@ class OSCParser:
                 cwd=h.cwd,
             )
         elif kind == "C":
-            # Output started. Mark output_start_seq.
+            # Command body finished, output begins — i.e. the command
+            # is now actually executing. We use this as the canonical
+            # "command started" event for consumers like
+            # command_telemetry; ;B fires when the prompt is drawn but
+            # before the user has pressed Enter, which would inflate
+            # duration by typing time.
             if h.current_command is None:
                 h.current_command = PendingCommand(
                     started_at=time.time(),
@@ -258,6 +298,23 @@ class OSCParser:
                 )
             h.current_command.output_started_at = time.time()
             h.current_command.output_start_seq = seq
+            if self._started_subscribers:
+                text: Optional[str] = None
+                if self._capture_text and h.current_command.text_chars:
+                    text = "".join(h.current_command.text_chars).strip("\r\n")
+                    if not text:
+                        text = None
+                ev = CommandStartEvent(
+                    started_at=h.current_command.output_started_at,
+                    started_at_monotonic=time.monotonic(),
+                    cwd=h.current_command.cwd,
+                    text=text,
+                )
+                for cb in list(self._started_subscribers):
+                    try:
+                        cb(ev)
+                    except Exception:
+                        pass
         elif kind == "D":
             exit_code: Optional[int] = None
             if tail:
@@ -334,8 +391,10 @@ class ShellIntegrationService:
         self._limit = history_limit
         # id(terminal) -> (handle, parser, history)
         self._states: dict[int, tuple] = {}
-        # id(terminal) -> list[Callable[[terminal, CommandRecord], None]]
+        # Global ;D subscribers; cb(terminal, CommandRecord).
         self._global_subs: list[Callable] = []
+        # Global ;C subscribers; cb(terminal, CommandStartEvent).
+        self._global_started_subs: list[Callable] = []
 
     @property
     def capture_command_text(self) -> bool:
@@ -349,8 +408,9 @@ class ShellIntegrationService:
         handle = self._registry.acquire(terminal)
         history = CommandHistory(limit=self._limit)
 
-        # Fan global subscribers out through a closure that includes
-        # the terminal — ;D subscribers usually want to know which tab.
+        # Fan global subscribers out through closures that include
+        # the terminal — both ;C and ;D subscribers usually want to
+        # know which tab fired.
         def _on_finished(rec: CommandRecord, term=terminal):
             for cb in list(self._global_subs):
                 try:
@@ -358,10 +418,18 @@ class ShellIntegrationService:
                 except Exception:
                     pass
 
+        def _on_started(ev: CommandStartEvent, term=terminal):
+            for cb in list(self._global_started_subs):
+                try:
+                    cb(term, ev)
+                except Exception:
+                    pass
+
         parser = OSCParser(
             history=history,
             capture_command_text=self._capture_text,
             on_command_finished=_on_finished,
+            on_command_started=_on_started,
         )
         handle.add_listener(parser.feed)
         self._states[tid] = (handle, parser, history)
@@ -412,6 +480,24 @@ class ShellIntegrationService:
         except ValueError:
             pass
 
+    def subscribe_command_started(self, cb: Callable) -> None:
+        """Subscribe to every command-started (OSC 133 ;C) event across
+        every tab the service has attached to. Callback signature:
+        ``cb(terminal, CommandStartEvent)``.
+
+        Paired with ``subscribe_command_finished`` for consumers
+        (e.g. command_telemetry) that need exact duration on commands
+        shorter than any polling interval.
+        """
+        if cb not in self._global_started_subs:
+            self._global_started_subs.append(cb)
+
+    def unsubscribe_command_started(self, cb: Callable) -> None:
+        try:
+            self._global_started_subs.remove(cb)
+        except ValueError:
+            pass
+
     # -- agent_control surface helpers --
 
     def serialize_last_command(self, terminal) -> Optional[dict]:
@@ -421,27 +507,36 @@ class ShellIntegrationService:
         if hist is None or not hist.history:
             return None
         rec = hist.history[-1]
-        return {
+        out = {
             "text": rec.text,
             "exit_status": rec.exit_status,
             "started_at": rec.started_at,
             "finished_at": rec.finished_at,
             "cwd": rec.cwd,
         }
+        if rec.telemetry is not None:
+            out["telemetry"] = rec.telemetry
+        return out
 
     def serialize_history(self, terminal, limit: int = 50) -> list[dict]:
         hist = self.get_history(terminal)
         if hist is None:
             return []
         recs = hist.history[-limit:] if limit > 0 else list(hist.history)
-        return [{
-            "text": r.text,
-            "exit_status": r.exit_status,
-            "started_at": r.started_at,
-            "finished_at": r.finished_at,
-            "cwd": r.cwd,
-            "output_seq_range": list(r.output_seq_range),
-        } for r in recs]
+        out = []
+        for r in recs:
+            entry = {
+                "text": r.text,
+                "exit_status": r.exit_status,
+                "started_at": r.started_at,
+                "finished_at": r.finished_at,
+                "cwd": r.cwd,
+                "output_seq_range": list(r.output_seq_range),
+            }
+            if r.telemetry is not None:
+                entry["telemetry"] = r.telemetry
+            out.append(entry)
+        return out
 
 
 # ---------------------------------------------------------------------------

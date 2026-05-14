@@ -30,6 +30,7 @@ first snapshot, every subsequent byte is fed through pyte too, so
 state stays consistent.
 """
 
+import time
 from typing import Callable, Optional
 
 
@@ -48,8 +49,10 @@ class ShadowScreen:
         self._term = terminal_widget
         # Sequence counter; first chunk has seq 1.
         self._seq = 0
-        # Rolling ring of (seq, raw_bytes).
-        self._stream: list[tuple[int, bytes]] = []
+        # Rolling ring of (seq, raw_bytes, monotonic_ts). Monotonic so
+        # the time axis survives wall-clock jumps (NTP, suspend/resume)
+        # — consumers like instant_replay use it to scrub by seconds.
+        self._stream: list[tuple[int, bytes, float]] = []
         self._stream_bytes = 0
         # Lazy pyte state — constructed on first snapshot().
         self._screen = None
@@ -81,7 +84,7 @@ class ShadowScreen:
         raw = text.encode("utf-8", errors="replace")
         self._seq += 1
         seq = self._seq
-        self._stream.append((seq, raw))
+        self._stream.append((seq, raw, time.monotonic()))
         self._stream_bytes += len(raw)
         while self._stream_bytes > self.BUFFER_LIMIT and len(self._stream) > 1:
             old = self._stream.pop(0)
@@ -124,7 +127,7 @@ class ShadowScreen:
         self._screen = pyte.Screen(cols, rows)
         self._pyte_stream = pyte.Stream(self._screen)
         # Replay buffered output so the first snapshot reflects history.
-        for _, raw in self._stream:
+        for _, raw, _ts in self._stream:
             try:
                 self._pyte_stream.feed(raw.decode("utf-8", errors="replace"))
             except Exception:
@@ -145,7 +148,7 @@ class ShadowScreen:
         """
         out = bytearray()
         latest = since
-        for s, raw in self._stream:
+        for s, raw, _ts in self._stream:
             if s > since:
                 out.extend(raw)
                 latest = s
@@ -161,6 +164,16 @@ class ShadowScreen:
             "cursor": {"x": s.cursor.x, "y": s.cursor.y},
             "lines": list(s.display),
         }
+
+    def chunks(self) -> list[tuple[int, bytes, float]]:
+        """Return a shallow copy of the ``(seq, bytes, monotonic_ts)`` ring.
+
+        Use this when you need chunk boundaries with timing (e.g.
+        instant_replay scrubs by seconds, command_telemetry stamps
+        per-line wall-clock). For "everything since seq N as a single
+        blob," use ``tail(since)`` instead.
+        """
+        return list(self._stream)
 
     # -- listener subscription --
 
@@ -200,6 +213,9 @@ class ShadowScreenHandle:
 
     def snapshot(self):
         return self._shadow.snapshot()
+
+    def chunks(self):
+        return self._shadow.chunks()
 
     def add_listener(self, cb):
         self._shadow.add_listener(cb)

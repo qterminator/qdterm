@@ -321,6 +321,97 @@ def test_send_keys_translates_ansi(qtbot, rpc):
     assert not cursor_line.endswith("abc"), f"line: {cursor_line!r}"
 
 
+def test_broadcast_event_delivers_to_attached(qtbot, rpc, plugin):
+    """broadcast_event reaches subscribed clients as a one-line event frame."""
+    tabs = rpc.call(qtbot, "list_tabs")["result"]
+    tid = tabs[0]["id"]
+    rpc.call(qtbot, "attach", tab_id=tid)
+
+    plugin.broadcast_event(tid, "trigger_match", {"rule_id": "errors",
+                                                   "pattern": "ERR"})
+    # Pump until something arrives on the socket.
+    end = time.monotonic() + 2.0
+    while time.monotonic() < end:
+        if b"\n" in rpc._buf:
+            break
+        try:
+            rpc._s.settimeout(0.05)
+            chunk = rpc._s.recv(4096)
+        except (BlockingIOError, socket.timeout):
+            chunk = b""
+        if chunk:
+            rpc._buf += chunk
+        qtbot.wait(20)
+    rpc._s.settimeout(None)
+    assert b"\n" in rpc._buf, "no event arrived"
+    line, _, rpc._buf = rpc._buf.partition(b"\n")
+    msg = json.loads(line)
+    assert msg["event"] == "trigger_match"
+    assert msg["tab_id"] == tid
+    assert msg["rule_id"] == "errors"
+    assert msg["pattern"] == "ERR"
+
+
+def test_broadcast_event_rejects_reserved_data_type(qtbot, rpc, plugin):
+    """``event_type='data'`` collides with the raw PTY stream frame and
+    must be silently dropped — nothing should appear on the wire."""
+    tabs = rpc.call(qtbot, "list_tabs")["result"]
+    tid = tabs[0]["id"]
+    rpc.call(qtbot, "attach", tab_id=tid)
+
+    plugin.broadcast_event(tid, "data", {"bytes_b64": "AAA"})
+    qtbot.wait(200)
+    rpc._s.settimeout(0.05)
+    try:
+        chunk = rpc._s.recv(4096)
+    except (BlockingIOError, socket.timeout):
+        chunk = b""
+    rpc._s.settimeout(None)
+    # No matter what arrived (timing-dependent PTY traffic may have
+    # produced a real "data" frame), there must be no event with
+    # bytes_b64=="AAA" — that would have been our forged frame.
+    combined = rpc._buf + chunk
+    for raw_line in combined.split(b"\n"):
+        if not raw_line.strip():
+            continue
+        try:
+            m = json.loads(raw_line)
+        except ValueError:
+            continue
+        assert m.get("bytes_b64") != "AAA", "reserved data event leaked"
+
+
+def test_broadcast_event_drops_envelope_collisions(qtbot, rpc, plugin):
+    """Payload keys that would clobber ``event`` or ``tab_id`` must be dropped."""
+    tabs = rpc.call(qtbot, "list_tabs")["result"]
+    tid = tabs[0]["id"]
+    rpc.call(qtbot, "attach", tab_id=tid)
+
+    plugin.broadcast_event(tid, "trigger_match", {
+        "event": "forged",
+        "tab_id": 99999,
+        "rule_id": "ok",
+    })
+    end = time.monotonic() + 2.0
+    while time.monotonic() < end:
+        if b"\n" in rpc._buf:
+            break
+        try:
+            rpc._s.settimeout(0.05)
+            chunk = rpc._s.recv(4096)
+        except (BlockingIOError, socket.timeout):
+            chunk = b""
+        if chunk:
+            rpc._buf += chunk
+        qtbot.wait(20)
+    rpc._s.settimeout(None)
+    line, _, rpc._buf = rpc._buf.partition(b"\n")
+    msg = json.loads(line)
+    assert msg["event"] == "trigger_match"
+    assert msg["tab_id"] == tid
+    assert msg["rule_id"] == "ok"
+
+
 def test_uid_mismatch_rejected(qtbot, plugin):
     # The plugin is loaded via importlib.util.spec_from_file_location, so
     # its module globals are a *separate* dict from the import-system's

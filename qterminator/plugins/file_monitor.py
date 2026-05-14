@@ -271,10 +271,25 @@ class FileMonitorPlugin(Plugin):
         app = self._app
         if app is None or not hasattr(app, "_tabs"):
             return
+        # ``app._tabs`` may wrap a destroyed C++ QTabWidget after the
+        # window is closed but before ``deactivate`` runs (test
+        # teardown, async close). Catch the RuntimeError and stop
+        # polling instead of crashing the event loop every tick.
+        try:
+            tabs = app._tabs
+            count = tabs.count()
+        except RuntimeError:
+            if self._timer is not None:
+                self._timer.stop()
+                self._timer = None
+            self._app = None
+            return
         now = time.time()
-        tabs = app._tabs
-        for i in range(tabs.count()):
-            split = tabs.widget(i)
+        for i in range(count):
+            try:
+                split = tabs.widget(i)
+            except RuntimeError:
+                return
             finder = getattr(split, "find_terminals", None)
             if finder is None:
                 continue

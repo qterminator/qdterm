@@ -249,7 +249,10 @@ def build_server(client: AgentControlClient,
         ``{records: [...], cwd_reported}`` where each record has
         ``text`` (null if capture-command-text is off, the default),
         ``exit_status``, ``started_at``, ``finished_at``, ``cwd``, and
-        ``output_seq_range``."""
+        ``output_seq_range``. When the ``command_telemetry`` plugin is
+        also loaded, records additionally carry a ``telemetry`` field
+        with ``duration``, ``cpu_seconds``, ``peak_rss_bytes`` and
+        ``process_count``."""
         return client.call("command_history", tab_id=tab_id, limit=limit)
 
     @mcp.tool()

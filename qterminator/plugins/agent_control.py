@@ -324,6 +324,8 @@ class AgentControlPlugin(Plugin):
                 "agent_control requires MainWindow.shadow_screens registry"
             )
         self._window = app_controller
+        # Register service for other plugins to find
+        app_controller.agent_control = self
         self._server = _AgentServer(self, app_controller)
         self._server.start()
 
@@ -337,10 +339,64 @@ class AgentControlPlugin(Plugin):
         if self._server:
             self._server.stop()
             self._server = None
+        # Remove service registration
+        if self._window and getattr(self._window, "agent_control", None) is self:
+            try:
+                del self._window.agent_control
+            except AttributeError:
+                pass
 
     @property
     def socket_path(self) -> Optional[str]:
         return self._server.socket_path if self._server else None
+
+    def broadcast_event(self, tab_id: int, event_type: str, payload: dict) -> None:
+        """Broadcast a custom event to all agents attached to a tab.
+
+        Other plugins use this to push structured events (command_finished,
+        trigger_match, etc.) to agents instead of having them poll.
+
+        Args:
+            tab_id: The terminal/tab ID
+            event_type: Event type string. ``"data"`` is reserved for
+                the raw PTY-byte stream emitted by :meth:`_AgentServer.broadcast_stream`
+                and is rejected here to avoid wire-shape collisions.
+            payload: Event data dict. Top-level ``bytes`` values are
+                base64-encoded; ``event``/``tab_id`` keys, if present,
+                are dropped — they would clobber the envelope otherwise.
+        """
+        if not self._server:
+            return
+        if event_type == "data":
+            # Reserved by broadcast_stream; would alias raw PTY frames.
+            return
+        state = self.tab_states.get(tab_id)
+        if not state or not state.subscribers:
+            return
+
+        encoded_payload = {}
+        for k, v in payload.items():
+            if k in ("event", "tab_id"):
+                # Drop envelope-key collisions silently rather than
+                # letting the caller forge a different tab_id or
+                # rewrite the event name on the wire.
+                continue
+            if isinstance(v, bytes):
+                encoded_payload[k] = base64.b64encode(v).decode("ascii")
+            else:
+                encoded_payload[k] = v
+
+        msg = {
+            "event": event_type,
+            "tab_id": tab_id,
+            **encoded_payload,
+        }
+        line = (json.dumps(msg) + "\n").encode("utf-8")
+
+        for fd in list(state.subscribers):
+            client = self._server._clients.get(fd)
+            if client:
+                client.send_raw(line)
 
     # -- tab discovery --
 

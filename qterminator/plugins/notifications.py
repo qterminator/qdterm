@@ -171,9 +171,29 @@ class InactivityDetector(OutputWatcher):
         if not self._app or not hasattr(self._app, '_tabs'):
             return
 
+        # ``self._app`` may be a Python reference to a QMainWindow
+        # whose C++ side has been destroyed (test teardown, window
+        # close before deactivate). ``hasattr`` won't detect that —
+        # the next attribute call into the deleted wrapper raises
+        # ``RuntimeError``. Catch and stop polling instead of
+        # crashing the event loop on every tick.
+        try:
+            count = self._app._tabs.count()
+        except RuntimeError:
+            if self._timer:
+                self._timer.stop()
+                self._timer = None
+            self._app = None
+            return
+
         now = time.time()
-        for i in range(self._app._tabs.count()):
-            split = self._app._tabs.widget(i)
+        for i in range(count):
+            try:
+                split = self._app._tabs.widget(i)
+            except RuntimeError:
+                return
+            if split is None:
+                continue
             for term in split.find_terminals():
                 self._check_terminal(term, now)
 

@@ -60,7 +60,7 @@ def osc(code: str, payload: str = "") -> bytes:
 # ---------------------------------------------------------------------------
 
 from qterminator.plugins.shell_integration import (
-    OSCParser, CommandHistory, ShellIntegrationService,
+    OSCParser, CommandHistory, CommandStartEvent, ShellIntegrationService,
     ShellIntegrationPlugin, _decode_file_uri,
 )
 
@@ -203,6 +203,49 @@ def test_subscriber_fires_exactly_once_per_command():
     assert seen[0].exit_status == 0
 
 
+def test_started_subscriber_fires_once_at_C():
+    """;C fires the start subscriber with a populated CommandStartEvent."""
+    h = CommandHistory()
+    started = []
+    p = OSCParser(h, capture_command_text=True,
+                  on_command_started=lambda ev: started.append(ev))
+    p.feed(1, osc("133", "A") + osc("133", "B"))
+    p.feed(2, b"ls -la")
+    p.feed(3, osc("133", "C"))
+    assert len(started) == 1
+    ev = started[0]
+    assert isinstance(ev, CommandStartEvent)
+    assert ev.text == "ls -la"
+    assert ev.started_at > 0.0
+    assert ev.started_at_monotonic > 0.0
+    # ;D should still fire its own subscribers downstream.
+    finished = []
+    p.add_subscriber(lambda r: finished.append(r))
+    p.feed(4, osc("133", "D;0"))
+    assert len(started) == 1
+    assert len(finished) == 1
+
+
+def test_started_subscriber_without_explicit_B():
+    """Shells that omit ;B (only ;A → ;C) still produce a start event."""
+    h = CommandHistory()
+    started = []
+    p = OSCParser(h, on_command_started=lambda ev: started.append(ev))
+    p.feed(1, osc("133", "A") + osc("133", "C"))
+    assert len(started) == 1
+
+
+def test_started_subscriber_exception_swallowed():
+    h = CommandHistory()
+    def bad(_ev): raise RuntimeError("boom")
+    p = OSCParser(h, on_command_started=bad)
+    # A second well-behaved subscriber must still get the event.
+    seen = []
+    p.add_started_subscriber(lambda ev: seen.append(ev))
+    p.feed(1, osc("133", "A") + osc("133", "B") + osc("133", "C"))
+    assert len(seen) == 1
+
+
 def test_subscriber_exception_swallowed():
     h = CommandHistory()
     def bad(_r): raise RuntimeError("boom")
@@ -312,6 +355,36 @@ def test_service_global_command_finished_subscription(terminal):
     t, rec = seen[0]
     assert t is terminal
     assert rec.exit_status == 42
+
+
+def test_service_global_command_started_subscription(terminal):
+    """A ``subscribe_command_started`` subscriber sees the originating
+    terminal and a populated CommandStartEvent on ;C. Unsubscribing
+    the same callable stops further events.
+    """
+    reg = ShadowScreenRegistry()
+    svc = ShellIntegrationService(reg)
+    started = []
+
+    def cb(t, ev):
+        started.append((t, ev))
+
+    svc.subscribe_command_started(cb)
+    svc.ensure_attached(terminal)
+    shadow = reg._shadows[id(terminal)][0]
+    shadow.feed("\x1b]133;A\x1b\\\x1b]133;B\x1b\\\x1b]133;C\x1b\\")
+    assert len(started) == 1
+    t, ev = started[0]
+    assert t is terminal
+    assert isinstance(ev, CommandStartEvent)
+
+    # Unsubscribing the exact callback stops further fires.
+    svc.unsubscribe_command_started(cb)
+    shadow.feed("\x1b]133;A\x1b\\\x1b]133;B\x1b\\\x1b]133;C\x1b\\")
+    assert len(started) == 1, "callback fired after unsubscribe"
+
+    # Unsubscribing a callback that was never registered is a no-op.
+    svc.unsubscribe_command_started(lambda *_: None)
 
 
 def test_service_serialize_last_command(terminal):

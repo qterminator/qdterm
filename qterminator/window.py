@@ -267,12 +267,41 @@ class MainWindow(QMainWindow):
         )
 
     def _setup_plugins(self):
-        """Initialize the plugin manager and load enabled plugins."""
+        """Initialize the plugin manager and load enabled plugins.
+
+        Activation order matters: other plugins read foundational
+        services from the controller (e.g. ``app_controller.shell_integration``
+        in their ``activate``), so foundational plugins must run first.
+        Otherwise the consumer sees ``None`` and silently skips the
+        subscription. ``os.listdir`` order is filesystem-dependent and
+        not safe to rely on.
+        """
         from qterminator.plugin import PluginManager
         self._plugin_manager = PluginManager()
         self._plugin_manager.discover()
-        # Auto-enable built-in plugins
-        for name in self._plugin_manager.available_plugins():
+
+        # Plugins others depend on; activate these first, in this
+        # order. Anything not listed activates afterward in the
+        # filesystem-discovered order.
+        foundation = (
+            "shell_integration",  # OSC parser; badges/auto_profile/etc. read it
+            "tmux_mode",          # session resolution; session_restoration reads it
+            "agent_control",      # broadcast surface; command_telemetry/agent_event_channel push through it
+            "triggers",           # rule events; agent_event_channel subscribes
+        )
+        available = self._plugin_manager.available_plugins()
+        seen: set[str] = set()
+        ordered = []
+        for name in foundation:
+            if name in available and name not in seen:
+                ordered.append(name)
+                seen.add(name)
+        for name in available:
+            if name not in seen:
+                ordered.append(name)
+                seen.add(name)
+
+        for name in ordered:
             self._plugin_manager.enable(name, self)
 
     def _setup_shortcuts(self):
@@ -381,6 +410,7 @@ class MainWindow(QMainWindow):
         terminal.term.setFocus()
         self._set_active_terminal(terminal)
         self._update_tab_bar_visibility()
+        return terminal
 
     def _on_tab_close_requested(self, index):
         split = self._tabs.widget(index)
