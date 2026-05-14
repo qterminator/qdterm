@@ -112,6 +112,12 @@ class MainWindow(QMainWindow):
         # apply_keybindings() walks this map to re-bind from config.
         self._actions: dict[str, QAction] = {}
 
+        # Shared registry for per-terminal shadow VT screens. Plugins
+        # reach this via app_controller.shadow_screens and refcount their
+        # access — see qterminator/shadow_screen.py.
+        from qterminator.shadow_screen import ShadowScreenRegistry
+        self.shadow_screens = ShadowScreenRegistry()
+
         self._setup_tabs()
         self._setup_shortcuts()
         self._setup_menubar()
@@ -940,5 +946,7 @@ class MainWindow(QMainWindow):
                         return
                     else:
                         event.accept()
+                        self.shadow_screens.shutdown()
                         return
+        self.shadow_screens.shutdown()
         event.accept()
