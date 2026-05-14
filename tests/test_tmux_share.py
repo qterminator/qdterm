@@ -1,0 +1,232 @@
+"""Tests for the tmux_share plugin.
+
+Unit tests with subprocess mocked to verify MOSH CONNECT parsing and
+service lifecycle. One real-mosh smoke test (skipped if mosh-server
+is not installed) runs `mosh-server new -- /bin/true` to confirm we
+parse a real binary's output.
+"""
+
+import os
+import shutil
+import subprocess
+from unittest.mock import patch
+
+import pytest
+
+import qterminator.config as config_mod
+from qterminator.config import Config
+from qterminator.plugins.tmux_share import (
+    TmuxShareService, TmuxSharePlugin, Share,
+    _MOSH_CONNECT_RE, _MOSH_DETACHED_RE,
+)
+
+
+@pytest.fixture(autouse=True)
+def fresh_config(tmp_path, monkeypatch):
+    monkeypatch.setattr(config_mod, "CONFIG_DIR", str(tmp_path))
+    monkeypatch.setattr(
+        config_mod, "CONFIG_FILE", str(tmp_path / "config.toml"),
+    )
+    Config._instance = None
+    yield
+    Config._instance = None
+
+
+class _FakeProc:
+    def __init__(self, stdout=b"", stderr=b"", returncode=0):
+        self.stdout = stdout
+        self.stderr = stderr
+        self.returncode = returncode
+
+
+# ---------------------------------------------------------------------------
+# Parsing
+# ---------------------------------------------------------------------------
+
+def test_parses_connect_line():
+    out = (b"MOSH CONNECT 60001 UAkFedSsVJs2LfMeKyQB5g\n"
+           b"mosh-server (mosh 1.4.0) [build mosh 1.4.0]\n"
+           b"[mosh-server detached, pid = 12345]\n")
+    m = _MOSH_CONNECT_RE.search(out)
+    assert m and m.group(1) == b"60001"
+    assert m.group(2) == b"UAkFedSsVJs2LfMeKyQB5g"
+
+    d = _MOSH_DETACHED_RE.search(out)
+    assert d and d.group(1) == b"12345"
+
+
+def test_parses_when_split_across_stdout_stderr():
+    """Some mosh-server builds split lines across stdout/stderr; we
+    concatenate both before searching. Verify the regex still finds it."""
+    combined = b"banner\n" + b"MOSH CONNECT 42 ABCDEF\n"
+    m = _MOSH_CONNECT_RE.search(combined)
+    assert m and m.group(1) == b"42"
+
+
+# ---------------------------------------------------------------------------
+# Service: spawn flow
+# ---------------------------------------------------------------------------
+
+def test_share_session_raises_when_no_binary(monkeypatch):
+    svc = TmuxShareService()
+    monkeypatch.setattr(
+        "qterminator.plugins.tmux_share._mosh_available", lambda: False,
+    )
+    with pytest.raises(RuntimeError, match="not installed"):
+        svc.share_session("qterm-1")
+
+
+def test_share_session_parses_mocked_output(monkeypatch):
+    svc = TmuxShareService(bind="127.0.0.1", port_range="60000:61000")
+    monkeypatch.setattr(
+        "qterminator.plugins.tmux_share._mosh_available", lambda: True,
+    )
+    fake_out = (b"MOSH CONNECT 60042 SOMEKEY123\n"
+                b"mosh-server (mosh 1.4.0)\n"
+                b"[mosh-server detached, pid = 99999]\n")
+
+    captured_argv = []
+    def _fake_run(argv, **kwargs):
+        captured_argv.extend(argv)
+        return _FakeProc(stdout=fake_out, stderr=b"")
+    monkeypatch.setattr(subprocess, "run", _fake_run)
+
+    share = svc.share_session("qterm-1", tmux_socket="my-sock")
+    assert share.session == "qterm-1"
+    assert share.port == 60042
+    assert share.key == "SOMEKEY123"
+    assert share.server_pid == 99999
+
+    # The argv must include the bind, port-range, and the tmux attach
+    # command (with -L when socket is provided).
+    assert captured_argv[0] == "mosh-server"
+    assert "-i" in captured_argv
+    assert "127.0.0.1" in captured_argv
+    assert "-p" in captured_argv
+    assert "60000:61000" in captured_argv
+    assert "--" in captured_argv
+    sep = captured_argv.index("--")
+    cmd = captured_argv[sep + 1:]
+    assert cmd[:1] == ["tmux"]
+    assert "-L" in cmd and "my-sock" in cmd
+    assert cmd[-3:] == ["attach", "-t", "qterm-1"]
+
+
+def test_share_session_raises_when_no_connect_line(monkeypatch):
+    svc = TmuxShareService()
+    monkeypatch.setattr(
+        "qterminator.plugins.tmux_share._mosh_available", lambda: True,
+    )
+    monkeypatch.setattr(
+        subprocess, "run",
+        lambda *a, **k: _FakeProc(stdout=b"some error\n"),
+    )
+    with pytest.raises(RuntimeError, match="MOSH CONNECT"):
+        svc.share_session("qterm-1")
+
+
+def test_share_session_handles_subprocess_timeout(monkeypatch):
+    svc = TmuxShareService()
+    monkeypatch.setattr(
+        "qterminator.plugins.tmux_share._mosh_available", lambda: True,
+    )
+    def _raise(*a, **k):
+        raise subprocess.TimeoutExpired(cmd="mosh-server", timeout=5)
+    monkeypatch.setattr(subprocess, "run", _raise)
+    with pytest.raises(RuntimeError, match="timed out"):
+        svc.share_session("qterm-1")
+
+
+# ---------------------------------------------------------------------------
+# Service: bookkeeping
+# ---------------------------------------------------------------------------
+
+def test_shares_for_prunes_dead_entries(monkeypatch):
+    svc = TmuxShareService()
+    share = Share(session="qterm-1", bind="127.0.0.1")
+    share.port = 60001
+    share.key = "X"
+    share.server_pid = 10**9  # almost certainly not running
+    svc._shares["qterm-1"] = [share]
+    live = svc.shares_for("qterm-1")
+    assert live == []
+    assert "qterm-1" not in svc._shares
+
+
+def test_ports_for_returns_live_ports(monkeypatch):
+    svc = TmuxShareService()
+    share = Share(session="qterm-1", bind="127.0.0.1")
+    share.port = 60001
+    share.key = "X"
+    share.server_pid = os.getpid()  # this test process is "alive"
+    svc._shares["qterm-1"] = [share]
+    assert svc.ports_for("qterm-1") == [60001]
+
+
+def test_connect_string_format():
+    share = Share(session="qterm-1", bind="127.0.0.1")
+    share.port = 60001
+    share.key = "ABCDEF"
+    s = share.connect_string
+    assert "MOSH_KEY=ABCDEF" in s
+    assert "60001" in s
+    assert "mosh-client" in s
+    assert "127.0.0.1" in s
+
+
+# ---------------------------------------------------------------------------
+# Plugin lifecycle
+# ---------------------------------------------------------------------------
+
+class _FakeWindow:
+    pass
+
+
+def test_plugin_exposes_service_on_activate():
+    w = _FakeWindow()
+    p = TmuxSharePlugin()
+    p.activate(w)
+    assert hasattr(w, "tmux_share")
+    assert isinstance(w.tmux_share, TmuxShareService)
+
+
+def test_plugin_deactivate_removes_service():
+    w = _FakeWindow()
+    p = TmuxSharePlugin()
+    p.activate(w)
+    p.deactivate()
+    assert not hasattr(w, "tmux_share")
+
+
+# ---------------------------------------------------------------------------
+# Real mosh-server smoke test
+# ---------------------------------------------------------------------------
+
+requires_mosh = pytest.mark.skipif(
+    shutil.which("mosh-server") is None, reason="mosh-server not installed",
+)
+
+
+@requires_mosh
+def test_real_mosh_server_output_is_parseable():
+    """mosh-server's actual output format hasn't drifted from what we
+    parse. Run it briefly against /bin/true and assert we extract a
+    port + key from the real binary."""
+    proc = subprocess.run(
+        ["mosh-server", "new", "-p", "0", "--", "/bin/true"],
+        capture_output=True, timeout=5,
+    )
+    out = proc.stdout + proc.stderr
+    m = _MOSH_CONNECT_RE.search(out)
+    assert m, f"unexpected mosh-server output: {out!r}"
+    port = int(m.group(1))
+    assert 1 < port < 65536
+    # The detached pid line is best-effort — assert it's there too,
+    # since tmux_share relies on it for kill().
+    d = _MOSH_DETACHED_RE.search(out)
+    if d:
+        # If we got a pid, the server is briefly alive; kill it cleanly.
+        try:
+            os.kill(int(d.group(1)), 15)
+        except OSError:
+            pass

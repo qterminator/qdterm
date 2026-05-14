@@ -414,6 +414,13 @@ class AgentControlPlugin(Plugin):
                     tmux_session = tmux_mode.get_session_for_terminal(term_widget)
                 except Exception:
                     tmux_session = None
+            shared_via_mosh: list[int] = []
+            tmux_share = getattr(self._window, "tmux_share", None)
+            if tmux_share is not None and tmux_session:
+                try:
+                    shared_via_mosh = list(tmux_share.ports_for(tmux_session))
+                except Exception:
+                    shared_via_mosh = []
             out.append({
                 "id": tid,
                 "title": term_widget.title(),
@@ -423,6 +430,7 @@ class AgentControlPlugin(Plugin):
                 "attached": tid in self.tab_states,
                 "working_directory": term_widget.working_directory(),
                 "tmux_session": tmux_session,
+                "shared_via_mosh": shared_via_mosh,
             })
         return out
 

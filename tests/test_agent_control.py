@@ -178,6 +178,25 @@ def test_list_tabs_reports_tmux_session_when_service_present(qtbot, rpc, window)
         del window.tmux_mode
 
 
+def test_list_tabs_reports_shared_via_mosh(qtbot, rpc, window):
+    """When tmux_share exposes active shares, list_tabs surfaces the
+    list of UDP ports under shared_via_mosh."""
+    class _FakeTmuxMode:
+        def get_session_for_terminal(self, _t):
+            return "qterm-fake"
+    class _FakeShare:
+        def ports_for(self, sess):
+            return [60042] if sess == "qterm-fake" else []
+    window.tmux_mode = _FakeTmuxMode()
+    window.tmux_share = _FakeShare()
+    try:
+        resp = rpc.call(qtbot, "list_tabs")
+        assert resp["result"][0]["shared_via_mosh"] == [60042]
+    finally:
+        del window.tmux_mode
+        del window.tmux_share
+
+
 def test_send_requires_attach(qtbot, rpc):
     tabs = rpc.call(qtbot, "list_tabs")["result"]
     tid = tabs[0]["id"]
