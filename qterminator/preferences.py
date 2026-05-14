@@ -6,7 +6,8 @@ from PyQt6.QtWidgets import (
     QApplication, QDialog, QTabWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
     QComboBox, QSpinBox, QCheckBox, QDialogButtonBox, QLabel,
     QFontComboBox, QWidget, QGroupBox, QDoubleSpinBox, QPushButton,
-    QFontDialog, QFrame,
+    QFontDialog, QFrame, QLineEdit, QListWidget, QListWidgetItem,
+    QStackedWidget, QScrollArea, QSplitter, QSizePolicy,
 )
 
 from QTermWidget import QTermWidget
@@ -15,26 +16,91 @@ from qterminator.config import Config
 from qterminator.translation import _ as tr
 
 
+class _CategoryAdapter:
+    """Read-only adapter exposing the QTabWidget API used by tests.
+
+    The dialog uses a left-pane QListWidget + right-pane QStackedWidget; this
+    wrapper lets callers query category labels and pages with tabText/widget/count.
+    """
+
+    def __init__(self, list_widget: QListWidget, stack: QStackedWidget):
+        self._list = list_widget
+        self._stack = stack
+
+    def count(self) -> int:
+        return self._stack.count()
+
+    def tabText(self, index: int) -> str:
+        item = self._list.item(index)
+        return item.text() if item is not None else ""
+
+    def widget(self, index: int) -> QWidget:
+        return self._stack.widget(index)
+
+    def setCurrentIndex(self, index: int) -> None:
+        self._list.setCurrentRow(index)
+
+    def currentIndex(self) -> int:
+        return self._stack.currentIndex()
+
+
 class PreferencesDialog(QDialog):
     """Application preferences dialog."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle(tr("QTerminator Preferences"))
-        self.setMinimumSize(500, 400)
+        self.resize(720, 520)
+        self.setMinimumSize(600, 420)
         self._config = Config()
 
-        layout = QVBoxLayout(self)
+        outer = QVBoxLayout(self)
 
-        # Tab widget for categories
-        self._tab_widget = QTabWidget()
-        layout.addWidget(self._tab_widget)
+        body = QHBoxLayout()
+        body.setSpacing(0)
+        outer.addLayout(body, 1)
 
-        self._tab_widget.addTab(self._build_appearance_tab(), tr("Appearance"))
-        self._tab_widget.addTab(self._build_behavior_tab(), tr("Behavior"))
-        self._tab_widget.addTab(self._build_shortcuts_tab(), tr("Shortcuts"))
+        # ---- Left pane: search + category list ----
+        left = QWidget(self)
+        left.setFixedWidth(200)
+        left_layout = QVBoxLayout(left)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(6)
 
-        # Buttons
+        self._search = QLineEdit(left)
+        self._search.setPlaceholderText(tr("Search"))
+        self._search.setClearButtonEnabled(True)
+        self._search.textChanged.connect(self._filter_categories)
+        left_layout.addWidget(self._search)
+
+        self._category_list = QListWidget(left)
+        self._category_list.setFrameShape(QFrame.Shape.NoFrame)
+        left_layout.addWidget(self._category_list, 1)
+
+        body.addWidget(left)
+
+        # Subtle vertical separator between panes
+        sep = QFrame(self)
+        sep.setFrameShape(QFrame.Shape.VLine)
+        sep.setFrameShadow(QFrame.Shadow.Sunken)
+        body.addWidget(sep)
+
+        # ---- Right pane: stacked category pages ----
+        self._stack = QStackedWidget(self)
+        body.addWidget(self._stack, 1)
+
+        # Compat shim for existing tests / external callers.
+        self._tab_widget = _CategoryAdapter(self._category_list, self._stack)
+
+        # Build pages and add to both list & stack
+        self._add_category(tr("Appearance"), self._build_appearance_page())
+        self._add_category(tr("Behavior"), self._build_behavior_page())
+        self._add_category(tr("Shortcuts"), self._build_shortcuts_page())
+
+        self._category_list.currentRowChanged.connect(self._stack.setCurrentIndex)
+        self._category_list.setCurrentRow(0)
+
+        # ---- Footer buttons ----
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok
             | QDialogButtonBox.StandardButton.Apply
@@ -43,11 +109,41 @@ class PreferencesDialog(QDialog):
         buttons.accepted.connect(self._apply_and_close)
         buttons.rejected.connect(self.reject)
         buttons.button(QDialogButtonBox.StandardButton.Apply).clicked.connect(self._apply)
-        layout.addWidget(buttons)
+        outer.addWidget(buttons)
 
         self._load_current_settings()
 
-    def _build_appearance_tab(self):
+    # ------------------------------------------------------------------ helpers
+
+    def _add_category(self, label: str, page: QWidget) -> None:
+        item = QListWidgetItem(label)
+        self._category_list.addItem(item)
+        self._stack.addWidget(page)
+
+    def _filter_categories(self, text: str) -> None:
+        needle = text.strip().lower()
+        first_visible = -1
+        for i in range(self._category_list.count()):
+            item = self._category_list.item(i)
+            visible = (not needle) or (needle in item.text().lower())
+            item.setHidden(not visible)
+            if visible and first_visible < 0:
+                first_visible = i
+        cur = self._category_list.currentRow()
+        if cur < 0 or self._category_list.item(cur).isHidden():
+            if first_visible >= 0:
+                self._category_list.setCurrentRow(first_visible)
+
+    def _wrap_scroll(self, widget: QWidget) -> QScrollArea:
+        scroll = QScrollArea()
+        scroll.setWidget(widget)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        return scroll
+
+    # ------------------------------------------------------------------ pages
+
+    def _build_appearance_page(self):
         widget = QWidget()
         layout = QVBoxLayout(widget)
 
@@ -55,7 +151,6 @@ class PreferencesDialog(QDialog):
         font_group = QGroupBox(tr("Font"))
         font_layout = QFormLayout(font_group)
 
-        # Family combo + "Browse..." button to open full QFontDialog
         family_row = QHBoxLayout()
         self._font_combo = QFontComboBox()
         self._font_combo.setFontFilters(QFontComboBox.FontFilter.MonospacedFonts)
@@ -75,12 +170,10 @@ class PreferencesDialog(QDialog):
         self._font_ligatures.toggled.connect(self._update_font_preview)
         font_layout.addRow(self._font_ligatures)
 
-        # Quick-select buttons for popular coding fonts (only show installed)
         popular_row = QHBoxLayout()
         popular_row.setSpacing(4)
         popular_label = QLabel(tr("Popular:"))
         popular_row.addWidget(popular_label)
-        from PyQt6.QtGui import QFontDatabase
         installed = set(QFontDatabase.families())
         any_popular = False
         for name in ["Fira Code", "JetBrains Mono", "Cascadia Code",
@@ -96,7 +189,6 @@ class PreferencesDialog(QDialog):
         if any_popular:
             font_layout.addRow("", popular_row)
 
-        # Live preview pane
         self._font_preview = QLabel()
         self._font_preview.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Sunken)
         self._font_preview.setMinimumHeight(80)
@@ -152,7 +244,7 @@ class PreferencesDialog(QDialog):
         layout.addWidget(cursor_group)
         layout.addStretch()
 
-        return widget
+        return self._wrap_scroll(widget)
 
     def _set_font_family(self, name):
         """Set font from a quick-select button."""
@@ -179,7 +271,7 @@ class PreferencesDialog(QDialog):
             font.setStyleStrategy(QFont.StyleStrategy.PreferDefault)
         self._font_preview.setFont(font)
 
-    def _build_behavior_tab(self):
+    def _build_behavior_page(self):
         widget = QWidget()
         layout = QVBoxLayout(widget)
 
@@ -222,9 +314,9 @@ class PreferencesDialog(QDialog):
         layout.addWidget(win_group)
         layout.addStretch()
 
-        return widget
+        return self._wrap_scroll(widget)
 
-    def _build_shortcuts_tab(self):
+    def _build_shortcuts_page(self):
         widget = QWidget()
         layout = QVBoxLayout(widget)
 
@@ -233,7 +325,6 @@ class PreferencesDialog(QDialog):
         )
         layout.addWidget(info)
 
-        # Show current keybindings as a read-only list
         form = QFormLayout()
         keybindings = self._config.keybindings
         for action, keys in sorted(keybindings.items()):
@@ -242,7 +333,7 @@ class PreferencesDialog(QDialog):
         layout.addLayout(form)
         layout.addStretch()
 
-        return widget
+        return self._wrap_scroll(widget)
 
     def _load_current_settings(self):
         profile = self._config.get_profile("default")
@@ -273,12 +364,10 @@ class PreferencesDialog(QDialog):
         pos_map = {"top": 0, "bottom": 1, "left": 2, "right": 3}
         self._tab_position.setCurrentIndex(pos_map.get(tab_pos, 0))
 
-        # Theme mode
         theme_mode = self._config.get("general", "theme_mode", default="system")
         mode_map = {"system": 0, "dark": 1, "light": 2}
         self._theme_mode.setCurrentIndex(mode_map.get(theme_mode, 0))
 
-        # Dark/Light color schemes
         dark_scheme = self._config.get("general", "dark_color_scheme", default="Linux")
         idx = self._dark_color_scheme.findText(dark_scheme)
         if idx >= 0:
@@ -317,7 +406,6 @@ class PreferencesDialog(QDialog):
         dark_color_scheme = self._dark_color_scheme.currentText()
         light_color_scheme = self._light_color_scheme.currentText()
 
-        # Save to config
         self._config.set("profiles", "default", "font_family", font_family)
         self._config.set("profiles", "default", "font_size", font_size)
         self._config.set("profiles", "default", "font_ligatures", self._font_ligatures.isChecked())
@@ -335,7 +423,6 @@ class PreferencesDialog(QDialog):
         self._config.set("general", "show_menubar", show_menubar)
         self._config.save()
 
-        # Apply theme
         from qterminator.theme import apply_theme, resolve_theme
         app = QApplication.instance()
         if app:
@@ -343,14 +430,12 @@ class PreferencesDialog(QDialog):
             if hasattr(parent, '_resolved_theme'):
                 parent._resolved_theme = resolved
 
-            # Apply the color scheme matching the resolved theme to terminals
             if hasattr(parent, 'apply_color_scheme_to_all'):
                 if resolved == "light":
                     parent.apply_color_scheme_to_all(light_color_scheme)
                 else:
                     parent.apply_color_scheme_to_all(dark_color_scheme)
 
-        # Apply to all terminals in all tabs
         if hasattr(parent, '_tabs'):
             for i in range(parent._tabs.count()):
                 split = parent._tabs.widget(i)
@@ -359,7 +444,6 @@ class PreferencesDialog(QDialog):
                     term.set_color_scheme(color_scheme)
                     term.set_scrollback(scrollback)
 
-            # Apply tab position
             tab_pos_map = {
                 0: QTabWidget.TabPosition.North,
                 1: QTabWidget.TabPosition.South,
@@ -371,7 +455,6 @@ class PreferencesDialog(QDialog):
                                 QTabWidget.TabPosition.North)
             )
 
-            # Apply menu bar visibility
             parent.menuBar().setVisible(show_menubar)
 
     def _apply_and_close(self):
