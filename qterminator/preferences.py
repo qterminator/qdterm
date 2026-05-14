@@ -85,9 +85,22 @@ class PreferencesDialog(QDialog):
         sep.setFrameShadow(QFrame.Shadow.Sunken)
         body.addWidget(sep)
 
-        # ---- Right pane: stacked category pages ----
-        self._stack = QStackedWidget(self)
-        body.addWidget(self._stack, 1)
+        # ---- Right pane: title header + stacked category pages ----
+        right = QWidget(self)
+        right_layout = QVBoxLayout(right)
+        right_layout.setContentsMargins(12, 0, 0, 0)
+        right_layout.setSpacing(8)
+
+        self._title = QLabel(right)
+        title_font = self._title.font()
+        title_font.setPointSize(max(title_font.pointSize() + 4, 14))
+        title_font.setBold(True)
+        self._title.setFont(title_font)
+        right_layout.addWidget(self._title)
+
+        self._stack = QStackedWidget(right)
+        right_layout.addWidget(self._stack, 1)
+        body.addWidget(right, 1)
 
         # Compat shim for existing tests / external callers.
         self._tab_widget = _CategoryAdapter(self._category_list, self._stack)
@@ -97,7 +110,7 @@ class PreferencesDialog(QDialog):
         self._add_category(tr("Behavior"), self._build_behavior_page())
         self._add_category(tr("Shortcuts"), self._build_shortcuts_page())
 
-        self._category_list.currentRowChanged.connect(self._stack.setCurrentIndex)
+        self._category_list.currentRowChanged.connect(self._on_category_changed)
         self._category_list.setCurrentRow(0)
 
         # ---- Footer buttons ----
@@ -119,6 +132,14 @@ class PreferencesDialog(QDialog):
         item = QListWidgetItem(label)
         self._category_list.addItem(item)
         self._stack.addWidget(page)
+
+    def _on_category_changed(self, index: int) -> None:
+        if index < 0:
+            return
+        self._stack.setCurrentIndex(index)
+        item = self._category_list.item(index)
+        if item is not None:
+            self._title.setText(item.text())
 
     def _filter_categories(self, text: str) -> None:
         needle = text.strip().lower()
@@ -170,12 +191,14 @@ class PreferencesDialog(QDialog):
         self._font_ligatures.toggled.connect(self._update_font_preview)
         font_layout.addRow(self._font_ligatures)
 
-        popular_row = QHBoxLayout()
-        popular_row.setSpacing(4)
-        popular_label = QLabel(tr("Popular:"))
-        popular_row.addWidget(popular_label)
+        from PyQt6.QtWidgets import QGridLayout
+        popular_grid = QGridLayout()
+        popular_grid.setHorizontalSpacing(4)
+        popular_grid.setVerticalSpacing(2)
         installed = set(QFontDatabase.families())
         any_popular = False
+        col_count = 3
+        row = col = 0
         for name in ["Fira Code", "JetBrains Mono", "Cascadia Code",
                      "Hack", "Source Code Pro", "DejaVu Sans Mono",
                      "Iosevka", "Inconsolata"]:
@@ -183,11 +206,14 @@ class PreferencesDialog(QDialog):
                 btn = QPushButton(name)
                 btn.setFlat(True)
                 btn.clicked.connect(lambda checked=False, n=name: self._set_font_family(n))
-                popular_row.addWidget(btn)
+                popular_grid.addWidget(btn, row, col)
+                col += 1
+                if col >= col_count:
+                    col = 0
+                    row += 1
                 any_popular = True
-        popular_row.addStretch()
         if any_popular:
-            font_layout.addRow("", popular_row)
+            font_layout.addRow(tr("Popular:"), popular_grid)
 
         self._font_preview = QLabel()
         self._font_preview.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Sunken)
