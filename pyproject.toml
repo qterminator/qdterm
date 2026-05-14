@@ -15,6 +15,7 @@ dependencies = [
 [project.scripts]
 qterminator = "qterminator.__main__:main"
 qterminator-mcp = "qterminator.mcp_server:main"
+qterminator-shell-integration = "qterminator.shell_integration_cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

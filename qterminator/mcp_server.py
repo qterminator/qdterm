@@ -152,7 +152,10 @@ def build_server(client: AgentControlClient,
         Each entry: ``id`` (int — opaque, pass to other tools),
         ``title``, ``shell_pid``, ``cols``, ``rows``, ``attached``
         (bool), ``working_directory``, ``tmux_session`` (str | None),
-        ``shared_via_mosh`` (list[int] of UDP ports)."""
+        ``shared_via_mosh`` (list[int] of UDP ports), ``cwd_reported``
+        (str | None, from OSC 7 if the shell emits it),
+        ``last_command`` ({text?, exit_status, started_at, finished_at,
+        cwd} | None, populated when shell_integration is loaded)."""
         return client.call("list_tabs")
 
     @mcp.tool()
@@ -235,6 +238,19 @@ def build_server(client: AgentControlClient,
             "start_recording", tab_id=tab_id, path=path,
             capture_input=capture_input,
         )
+
+    @mcp.tool()
+    def command_history(tab_id: int, limit: int = 50) -> dict:
+        """Recent completed shell commands for a tab.
+
+        Requires the ``shell_integration`` plugin and a shell that emits
+        OSC 133 sequences (oh-my-zsh, starship, bash-preexec, fish 3.6+,
+        kitty/iTerm2/vscode shell-integration). Returns
+        ``{records: [...], cwd_reported}`` where each record has
+        ``text`` (null if capture-command-text is off, the default),
+        ``exit_status``, ``started_at``, ``finished_at``, ``cwd``, and
+        ``output_seq_range``."""
+        return client.call("command_history", tab_id=tab_id, limit=limit)
 
     @mcp.tool()
     def stop_recording(tab_id: int,

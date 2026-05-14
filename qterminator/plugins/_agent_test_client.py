@@ -70,6 +70,8 @@ def main(argv=None):
     a = sub.add_parser("screenshot"); a.add_argument("tab_id", type=int); a.add_argument("out")
     a = sub.add_parser("open_tab"); a.add_argument("--cwd", default=None)
     a = sub.add_parser("close"); a.add_argument("tab_id", type=int)
+    a = sub.add_parser("command_history"); a.add_argument("tab_id", type=int)
+    a.add_argument("--limit", type=int, default=50)
 
     args = p.parse_args(argv)
     c = _Conn(args.sock)
@@ -100,6 +102,11 @@ def main(argv=None):
         print(json.dumps(c.call("open_tab", working_directory=args.cwd), indent=2))
     elif args.cmd == "close":
         print(json.dumps(c.call("close_tab", tab_id=args.tab_id), indent=2))
+    elif args.cmd == "command_history":
+        print(json.dumps(
+            c.call("command_history", tab_id=args.tab_id, limit=args.limit),
+            indent=2,
+        ))
 
 
 if __name__ == "__main__":

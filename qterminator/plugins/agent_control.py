@@ -432,6 +432,17 @@ class AgentControlPlugin(Plugin):
                         recording_path = rec.path
                 except Exception:
                     pass
+            cwd_reported = None
+            last_command = None
+            shell_int = getattr(self._window, "shell_integration", None)
+            if shell_int is not None:
+                try:
+                    history = shell_int.ensure_attached(term_widget)
+                    cwd_reported = history.cwd
+                    last_command = shell_int.serialize_last_command(term_widget)
+                except Exception:
+                    cwd_reported = None
+                    last_command = None
             out.append({
                 "id": tid,
                 "title": term_widget.title(),
@@ -444,6 +455,8 @@ class AgentControlPlugin(Plugin):
                 "shared_via_mosh": shared_via_mosh,
                 "recording": recording,
                 "recording_path": recording_path,
+                "cwd_reported": cwd_reported,
+                "last_command": last_command,
             })
         return out
 
@@ -561,6 +574,24 @@ class AgentControlPlugin(Plugin):
             "bytes_written": bytes_written,
             "event_count": event_count,
             "duration": round(duration, 6),
+        }
+
+    def rpc_command_history(self, _client, tab_id: int, limit: int = 50):
+        """Return recent completed commands for ``tab_id``.
+
+        ``shell_integration`` plugin must be loaded; otherwise raises.
+        Each record: ``text`` (may be null if capture disabled),
+        ``exit_status``, ``started_at``, ``finished_at``, ``cwd``,
+        ``output_seq_range``."""
+        term_widget = self._get_terminal(tab_id)
+        shell_int = getattr(self._window, "shell_integration", None)
+        if shell_int is None:
+            raise _RpcError(-32007, "shell_integration plugin not loaded")
+        # Attach so even a never-listed tab starts buffering history.
+        shell_int.ensure_attached(term_widget)
+        return {
+            "records": shell_int.serialize_history(term_widget, limit=limit),
+            "cwd_reported": shell_int.get_history(term_widget).cwd,
         }
 
     def rpc_close_tab(self, _client, tab_id: int):
