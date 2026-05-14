@@ -3,17 +3,38 @@
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont, QFontDatabase
 from PyQt6.QtWidgets import (
-    QApplication, QDialog, QTabWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
-    QComboBox, QSpinBox, QCheckBox, QDialogButtonBox, QLabel,
+    QAbstractItemView, QApplication, QDialog, QTabWidget, QVBoxLayout,
+    QHBoxLayout, QFormLayout, QComboBox, QSpinBox, QCheckBox,
+    QDialogButtonBox, QHeaderView, QKeySequenceEdit, QLabel, QMenu,
     QFontComboBox, QWidget, QGroupBox, QDoubleSpinBox, QPushButton,
     QFontDialog, QFrame, QLineEdit, QListWidget, QListWidgetItem,
     QStackedWidget, QScrollArea, QSplitter, QSizePolicy,
+    QStyledItemDelegate, QTableWidget, QTableWidgetItem,
 )
+from PyQt6.QtCore import QModelIndex
 
 from QTermWidget import QTermWidget
 
 from qterminator.config import Config
 from qterminator.translation import _ as tr
+
+
+class _KeySequenceDelegate(QStyledItemDelegate):
+    """Cell delegate that edits a shortcut via QKeySequenceEdit."""
+
+    def createEditor(self, parent, option, index):  # noqa: N802
+        return QKeySequenceEdit(parent)
+
+    def setEditorData(self, editor: QKeySequenceEdit, index: QModelIndex) -> None:  # noqa: N802
+        text = index.data(Qt.ItemDataRole.EditRole) or ""
+        editor.setKeySequence(QKeySequence(str(text)))
+
+    def setModelData(self, editor: QKeySequenceEdit, model, index: QModelIndex) -> None:  # noqa: N802
+        model.setData(index, editor.keySequence().toString(), Qt.ItemDataRole.EditRole)
+
+
+def _humanize_action_name(name: str) -> str:
+    return name.replace("_", " ").title()
 
 
 class _CategoryAdapter:
@@ -346,20 +367,81 @@ class PreferencesDialog(QDialog):
         widget = QWidget()
         layout = QVBoxLayout(widget)
 
-        info = QLabel(
-            tr("Keyboard shortcuts are configured in\n~/.config/qterminator/config.toml\n\nDefault shortcuts:")
-        )
+        info = QLabel(tr(
+            "Double-click a shortcut to record a new key combination. "
+            "Right-click a row to clear or reset to default."
+        ))
+        info.setWordWrap(True)
+        info.setStyleSheet("color: palette(placeholder-text);")
         layout.addWidget(info)
 
-        form = QFormLayout()
-        keybindings = self._config.keybindings
-        for action, keys in sorted(keybindings.items()):
-            label = action.replace("_", " ").title()
-            form.addRow(f"{label}:", QLabel(keys))
-        layout.addLayout(form)
-        layout.addStretch()
+        # Capture defaults from the config DEFAULTS dict so "Reset to default"
+        # restores the shipped binding even after the user has saved an override.
+        from qterminator.config import DEFAULTS as _CFG_DEFAULTS
+        self._shortcut_defaults: dict[str, str] = dict(
+            _CFG_DEFAULTS.get("keybindings", {})
+        )
+        # Source of truth for action ordering = current config (already merged).
+        self._shortcut_actions: list[str] = sorted(self._config.keybindings.keys())
 
-        return self._wrap_scroll(widget)
+        self._shortcut_table = QTableWidget(
+            len(self._shortcut_actions), 2, widget
+        )
+        self._shortcut_table.setHorizontalHeaderLabels(
+            [tr("Action"), tr("Shortcut")]
+        )
+        self._shortcut_table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.Stretch
+        )
+        self._shortcut_table.verticalHeader().setVisible(False)
+        self._shortcut_table.setEditTriggers(
+            QAbstractItemView.EditTrigger.DoubleClicked
+            | QAbstractItemView.EditTrigger.SelectedClicked
+            | QAbstractItemView.EditTrigger.EditKeyPressed
+        )
+        self._shortcut_table.setItemDelegateForColumn(
+            1, _KeySequenceDelegate(self._shortcut_table)
+        )
+        self._shortcut_table.setContextMenuPolicy(
+            Qt.ContextMenuPolicy.CustomContextMenu
+        )
+        self._shortcut_table.customContextMenuRequested.connect(
+            self._on_shortcut_context_menu
+        )
+
+        for r, name in enumerate(self._shortcut_actions):
+            label_item = QTableWidgetItem(_humanize_action_name(name))
+            label_item.setFlags(label_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            label_item.setData(Qt.ItemDataRole.UserRole, name)
+            self._shortcut_table.setItem(r, 0, label_item)
+            self._shortcut_table.setItem(
+                r, 1, QTableWidgetItem(self._config.keybindings.get(name, ""))
+            )
+        layout.addWidget(self._shortcut_table, 1)
+
+        return widget
+
+    def _on_shortcut_context_menu(self, pos):
+        index = self._shortcut_table.indexAt(pos)
+        if not index.isValid():
+            return
+        row = index.row()
+        label_item = self._shortcut_table.item(row, 0)
+        if label_item is None:
+            return
+        name = label_item.data(Qt.ItemDataRole.UserRole)
+        menu = QMenu(self._shortcut_table)
+        act_clear = menu.addAction(tr("Clear shortcut"))
+        act_reset = menu.addAction(tr("Reset to default"))
+        chosen = menu.exec(self._shortcut_table.viewport().mapToGlobal(pos))
+        if chosen is None:
+            return
+        if chosen is act_clear:
+            self._shortcut_table.item(row, 1).setText("")
+        elif chosen is act_reset:
+            self._shortcut_table.item(row, 1).setText(
+                self._shortcut_defaults.get(name, "")
+            )
 
     def _load_current_settings(self):
         profile = self._config.get_profile("default")
@@ -447,6 +529,15 @@ class PreferencesDialog(QDialog):
         self._config.set("general", "light_color_scheme", light_color_scheme)
         show_menubar = self._show_menubar.isChecked()
         self._config.set("general", "show_menubar", show_menubar)
+
+        # Persist shortcut edits and re-bind on the parent window.
+        for r, name in enumerate(self._shortcut_actions):
+            cell = self._shortcut_table.item(r, 1)
+            keys = cell.text().strip() if cell is not None else ""
+            self._config.set("keybindings", name, keys)
+        if hasattr(parent, "apply_keybindings"):
+            parent.apply_keybindings()
+
         self._config.save()
 
         from qterminator.theme import apply_theme, resolve_theme

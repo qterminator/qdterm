@@ -205,14 +205,18 @@ class TestDialogStructure:
         qtbot.addWidget(dlg)
         assert isinstance(dlg._confirm_close, QCheckBox)
 
-    def test_shortcuts_tab_has_keybinding_labels(self, window, qtbot):
-        """Shortcuts tab displays keybinding entries as labels."""
+    def test_shortcuts_tab_has_keybinding_table(self, window, qtbot):
+        """Shortcuts tab shows keybinding entries in an editable table."""
+        from PyQt6.QtWidgets import QTableWidget
         dlg = PreferencesDialog(window)
         qtbot.addWidget(dlg)
         shortcuts_tab = dlg._tab_widget.widget(2)
-        labels = shortcuts_tab.findChildren(QLabel)
-        # At least one label for each keybinding + the info text
-        assert len(labels) > 5
+        tables = shortcuts_tab.findChildren(QTableWidget)
+        assert len(tables) == 1
+        table = tables[0]
+        # One row per configured keybinding
+        assert table.rowCount() == len(dlg._shortcut_actions)
+        assert table.rowCount() > 5
 
 
 # ---------------------------------------------------------------------------
@@ -636,3 +640,64 @@ class TestPreferencesIntegration:
 
         cfg = Config()
         assert cfg.get("profiles", "default", "background_opacity") == 0.50
+
+
+# ---------------------------------------------------------------------------
+# Editable keybindings tests
+# ---------------------------------------------------------------------------
+
+class TestEditableShortcuts:
+    """The Shortcuts page lets users record and persist new key sequences."""
+
+    def _row_for(self, dlg, action_name):
+        for r in range(dlg._shortcut_table.rowCount()):
+            item = dlg._shortcut_table.item(r, 0)
+            if item is not None and item.data(Qt.ItemDataRole.UserRole) == action_name:
+                return r
+        return -1
+
+    def test_table_seeds_from_config(self, window, qtbot):
+        dlg = PreferencesDialog(window)
+        qtbot.addWidget(dlg)
+        row = self._row_for(dlg, "new_tab")
+        assert row >= 0
+        assert dlg._shortcut_table.item(row, 1).text() == "Ctrl+Shift+T"
+
+    def test_apply_persists_shortcut_to_config(self, window, qtbot):
+        dlg = PreferencesDialog(window)
+        qtbot.addWidget(dlg)
+        row = self._row_for(dlg, "new_tab")
+        dlg._shortcut_table.item(row, 1).setText("Ctrl+Alt+T")
+        dlg._apply()
+        cfg = Config()
+        assert cfg.get_keybinding("new_tab") == "Ctrl+Alt+T"
+
+    def test_apply_rebinds_running_action(self, window, qtbot):
+        dlg = PreferencesDialog(window)
+        qtbot.addWidget(dlg)
+        row = self._row_for(dlg, "new_tab")
+        dlg._shortcut_table.item(row, 1).setText("Ctrl+Alt+J")
+        dlg._apply()
+        assert window._actions["new_tab"].shortcut().toString() == "Ctrl+Alt+J"
+
+    def test_clear_shortcut_persists_as_empty(self, window, qtbot):
+        dlg = PreferencesDialog(window)
+        qtbot.addWidget(dlg)
+        row = self._row_for(dlg, "new_tab")
+        dlg._shortcut_table.item(row, 1).setText("")
+        dlg._apply()
+        assert window._actions["new_tab"].shortcut().toString() == ""
+        cfg = Config()
+        assert cfg.get_keybinding("new_tab") == ""
+
+    def test_delegate_is_key_sequence_delegate(self, window, qtbot):
+        from qterminator.preferences import _KeySequenceDelegate
+        from PyQt6.QtWidgets import QKeySequenceEdit
+        dlg = PreferencesDialog(window)
+        qtbot.addWidget(dlg)
+        delegate = dlg._shortcut_table.itemDelegateForColumn(1)
+        assert isinstance(delegate, _KeySequenceDelegate)
+        index = dlg._shortcut_table.model().index(0, 1)
+        editor = delegate.createEditor(dlg._shortcut_table, None, index)
+        qtbot.addWidget(editor)
+        assert isinstance(editor, QKeySequenceEdit)

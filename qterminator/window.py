@@ -108,6 +108,9 @@ class MainWindow(QMainWindow):
         self._zoomed_terminal = None
         self._zoom_hidden_widgets = []
         self._resolved_theme = resolved_theme or "dark"
+        # action_name -> QAction. Populated by _make_action / _shortcut.
+        # apply_keybindings() walks this map to re-bind from config.
+        self._actions: dict[str, QAction] = {}
 
         self._setup_tabs()
         self._setup_shortcuts()
@@ -145,49 +148,49 @@ class MainWindow(QMainWindow):
 
         # File menu
         file_menu = menubar.addMenu(tr("&File"))
-        file_menu.addAction(self._make_action(tr("New &Tab"), "Ctrl+Shift+T", self.new_tab, icon="tab-new"))
-        file_menu.addAction(self._make_action(tr("New &Window"), "Ctrl+Shift+I", self._new_window, icon="window-new"))
+        file_menu.addAction(self._make_action(tr("New &Tab"), "new_tab", self.new_tab, icon="tab-new"))
+        file_menu.addAction(self._make_action(tr("New &Window"), "new_window", self._new_window, icon="window-new"))
         file_menu.addSeparator()
-        file_menu.addAction(self._make_action(tr("&Close Terminal"), "Ctrl+Shift+W", self._close_active_terminal, icon="window-close"))
-        file_menu.addAction(self._make_action(tr("&Quit"), "Ctrl+Shift+Q", self.close, icon="application-exit"))
+        file_menu.addAction(self._make_action(tr("&Close Terminal"), "close_terminal", self._close_active_terminal, icon="window-close"))
+        file_menu.addAction(self._make_action(tr("&Quit"), "quit", self.close, icon="application-exit"))
 
         # Edit menu
         edit_menu = menubar.addMenu(tr("&Edit"))
-        edit_menu.addAction(self._make_action(tr("&Copy"), "Ctrl+Shift+C", self._copy, icon="edit-copy"))
-        edit_menu.addAction(self._make_action(tr("&Paste"), "Ctrl+Shift+V", self._paste, icon="edit-paste"))
+        edit_menu.addAction(self._make_action(tr("&Copy"), "copy", self._copy, icon="edit-copy"))
+        edit_menu.addAction(self._make_action(tr("&Paste"), "paste", self._paste, icon="edit-paste"))
         edit_menu.addSeparator()
-        edit_menu.addAction(self._make_action(tr("&Search"), "Ctrl+Shift+F", self._search, icon="edit-find"))
-        edit_menu.addAction(self._make_action(tr("&Reset"), "Ctrl+Shift+R", self._reset, icon="view-refresh"))
-        edit_menu.addAction(self._make_action(tr("Reset && C&lear"), "Ctrl+Shift+G", self._reset_clear, icon="edit-clear"))
+        edit_menu.addAction(self._make_action(tr("&Search"), "search", self._search, icon="edit-find"))
+        edit_menu.addAction(self._make_action(tr("&Reset"), "reset", self._reset, icon="view-refresh"))
+        edit_menu.addAction(self._make_action(tr("Reset && C&lear"), "reset_clear", self._reset_clear, icon="edit-clear"))
         edit_menu.addSeparator()
-        edit_menu.addAction(self._make_action(tr("&Preferences..."), "", self._open_preferences, icon="preferences-system"))
+        edit_menu.addAction(self._make_action(tr("&Preferences..."), "preferences", self._open_preferences, icon="preferences-system"))
 
         # View menu
         view_menu = menubar.addMenu(tr("&View"))
-        view_menu.addAction(self._make_action(tr("Split &Horizontally"), "Ctrl+Shift+O", self._split_horizontal, icon="view-split-top-bottom"))
-        view_menu.addAction(self._make_action(tr("Split &Vertically"), "Ctrl+Shift+E", self._split_vertical, icon="view-split-left-right"))
-        view_menu.addAction(self._make_action(tr("&Rotate Splits"), "Meta+R", self._rotate_splits, icon="object-rotate-right"))
+        view_menu.addAction(self._make_action(tr("Split &Horizontally"), "split_horizontal", self._split_horizontal, icon="view-split-top-bottom"))
+        view_menu.addAction(self._make_action(tr("Split &Vertically"), "split_vertical", self._split_vertical, icon="view-split-left-right"))
+        view_menu.addAction(self._make_action(tr("&Rotate Splits"), "rotate_splits", self._rotate_splits, icon="object-rotate-right"))
         view_menu.addSeparator()
-        view_menu.addAction(self._make_action(tr("&Maximize Terminal"), "Ctrl+Shift+Z", self._toggle_zoom, icon="zoom-fit-best"))
-        self._fullscreen_action = self._make_action(tr("&Full Screen"), "F11", self._toggle_fullscreen, icon="view-fullscreen")
+        view_menu.addAction(self._make_action(tr("&Maximize Terminal"), "maximize_terminal", self._toggle_zoom, icon="zoom-fit-best"))
+        self._fullscreen_action = self._make_action(tr("&Full Screen"), "full_screen", self._toggle_fullscreen, icon="view-fullscreen")
         view_menu.addAction(self._fullscreen_action)
         view_menu.addSeparator()
-        view_menu.addAction(self._make_action(tr("Zoom &In"), "Ctrl+Shift+=", self._zoom_in, icon="zoom-in"))
-        view_menu.addAction(self._make_action(tr("Zoom &Out"), "Ctrl+Shift+-", self._zoom_out, icon="zoom-out"))
-        view_menu.addAction(self._make_action(tr("Zoom &Normal"), "Ctrl+0", self._zoom_normal, icon="zoom-original"))
+        view_menu.addAction(self._make_action(tr("Zoom &In"), "zoom_in", self._zoom_in, icon="zoom-in"))
+        view_menu.addAction(self._make_action(tr("Zoom &Out"), "zoom_out", self._zoom_out, icon="zoom-out"))
+        view_menu.addAction(self._make_action(tr("Zoom &Normal"), "zoom_normal", self._zoom_normal, icon="zoom-original"))
         view_menu.addSeparator()
-        self._scrollbar_action = self._make_action(tr("Toggle &Scrollbar"), "Ctrl+Shift+S", self._toggle_scrollbar)
+        self._scrollbar_action = self._make_action(tr("Toggle &Scrollbar"), "toggle_scrollbar", self._toggle_scrollbar)
         self._scrollbar_action.setCheckable(True)
         self._scrollbar_action.setChecked(True)
         view_menu.addAction(self._scrollbar_action)
 
         # Terminal menu
         term_menu = menubar.addMenu(tr("&Terminal"))
-        term_menu.addAction(self._make_action(tr("Edit &Terminal Title..."), "Ctrl+Alt+X", self._edit_terminal_title, icon="edit-rename"))
-        term_menu.addAction(self._make_action(tr("Edit T&ab Title..."), "Ctrl+Alt+A", self._edit_tab_title, icon="edit-rename"))
-        term_menu.addAction(self._make_action(tr("Edit &Window Title..."), "Ctrl+Alt+W", self._edit_window_title, icon="edit-rename"))
+        term_menu.addAction(self._make_action(tr("Edit &Terminal Title..."), "edit_terminal_title", self._edit_terminal_title, icon="edit-rename"))
+        term_menu.addAction(self._make_action(tr("Edit T&ab Title..."), "edit_tab_title", self._edit_tab_title, icon="edit-rename"))
+        term_menu.addAction(self._make_action(tr("Edit &Window Title..."), "edit_window_title", self._edit_window_title, icon="edit-rename"))
         term_menu.addSeparator()
-        term_menu.addAction(self._make_action(tr("Read-&Only"), "", self._toggle_read_only, icon="object-locked"))
+        term_menu.addAction(self._make_action(tr("Read-&Only"), "read_only", self._toggle_read_only, icon="object-locked"))
 
         # Broadcast submenu
         broadcast_menu = term_menu.addMenu(tr("&Broadcast Input"))
@@ -264,60 +267,80 @@ class MainWindow(QMainWindow):
     def _setup_shortcuts(self):
         """Register keyboard shortcuts that work even without menu bar focus."""
         # Tab navigation
-        self._shortcut("Ctrl+PgUp", self._prev_tab)
-        self._shortcut("Ctrl+PgDown", self._next_tab)
-        self._shortcut("Ctrl+Tab", self._cycle_next)
-        self._shortcut("Ctrl+Shift+Tab", self._cycle_prev)
+        self._shortcut("prev_tab", self._prev_tab)
+        self._shortcut("next_tab", self._next_tab)
+        self._shortcut("cycle_next", self._cycle_next)
+        self._shortcut("cycle_prev", self._cycle_prev)
 
         # Tab reordering
-        self._shortcut("Ctrl+Shift+PgUp", self._move_tab_left)
-        self._shortcut("Ctrl+Shift+PgDown", self._move_tab_right)
+        self._shortcut("move_tab_left", self._move_tab_left)
+        self._shortcut("move_tab_right", self._move_tab_right)
 
-        # Switch to tab by number (Alt+1-9)
+        # Switch to tab by number (1-9)
         for i in range(1, 10):
-            self._shortcut(f"Alt+{i}", lambda idx=i-1: self._switch_to_tab(idx))
+            self._shortcut(f"switch_to_tab_{i}", lambda idx=i-1: self._switch_to_tab(idx))
 
         # Terminal navigation in splits
-        self._shortcut("Alt+Left", lambda: self._navigate("left"))
-        self._shortcut("Alt+Right", lambda: self._navigate("right"))
-        self._shortcut("Alt+Up", lambda: self._navigate("up"))
-        self._shortcut("Alt+Down", lambda: self._navigate("down"))
+        self._shortcut("navigate_left", lambda: self._navigate("left"))
+        self._shortcut("navigate_right", lambda: self._navigate("right"))
+        self._shortcut("navigate_up", lambda: self._navigate("up"))
+        self._shortcut("navigate_down", lambda: self._navigate("down"))
 
         # Resize splits by keyboard
-        self._shortcut("Ctrl+Shift+Right", lambda: self._resize_split("right"))
-        self._shortcut("Ctrl+Shift+Left", lambda: self._resize_split("left"))
-        self._shortcut("Ctrl+Shift+Up", lambda: self._resize_split("up"))
-        self._shortcut("Ctrl+Shift+Down", lambda: self._resize_split("down"))
+        self._shortcut("resize_right", lambda: self._resize_split("right"))
+        self._shortcut("resize_left", lambda: self._resize_split("left"))
+        self._shortcut("resize_up", lambda: self._resize_split("up"))
+        self._shortcut("resize_down", lambda: self._resize_split("down"))
 
         # Scrollback navigation
-        self._shortcut("Shift+PgUp", self._scroll_page_up)
-        self._shortcut("Shift+PgDown", self._scroll_page_down)
+        self._shortcut("scroll_page_up", self._scroll_page_up)
+        self._shortcut("scroll_page_down", self._scroll_page_down)
 
         # Profile cycling
-        self._shortcut("Ctrl+Alt+N", self._next_profile)
-        self._shortcut("Ctrl+Alt+P", self._prev_profile)
+        self._shortcut("next_profile", self._next_profile)
+        self._shortcut("prev_profile", self._prev_profile)
 
         # Toggle menu bar
-        self._shortcut("Ctrl+Shift+M", self._toggle_menubar)
+        self._shortcut("toggle_menubar", self._toggle_menubar)
 
-    def _make_action(self, text, shortcut, slot, icon=None):
+    def _make_action(self, text, action_name, slot, icon=None):
+        """Create a menu QAction, with its shortcut sourced from Config.
+
+        `action_name` is the keybindings key (e.g. "new_tab"). Passing an
+        empty string skips registration in `_actions` and leaves the action
+        without a configurable shortcut.
+        """
         if icon:
             action = QAction(QIcon.fromTheme(icon), text, self)
         else:
             action = QAction(text, self)
-        if shortcut:
-            action.setShortcut(QKeySequence(shortcut))
+        if action_name:
+            shortcut = Config().get_keybinding(action_name) or ""
+            if shortcut:
+                action.setShortcut(QKeySequence(shortcut))
             action.setShortcutContext(Qt.ShortcutContext.WindowShortcut)
+            self._actions[action_name] = action
         action.triggered.connect(slot)
         # Add to window so shortcuts work even when menubar is hidden
         self.addAction(action)
         return action
 
-    def _shortcut(self, keys, slot):
+    def _shortcut(self, action_name, slot):
+        """Register a window-wide QAction whose shortcut comes from Config."""
         action = QAction(self)
-        action.setShortcut(QKeySequence(keys))
+        shortcut = Config().get_keybinding(action_name) or ""
+        if shortcut:
+            action.setShortcut(QKeySequence(shortcut))
         action.triggered.connect(slot)
         self.addAction(action)
+        self._actions[action_name] = action
+
+    def apply_keybindings(self):
+        """Re-read all keybindings from Config and apply to registered actions."""
+        cfg = Config()
+        for name, action in self._actions.items():
+            keys = cfg.get_keybinding(name) or ""
+            action.setShortcut(QKeySequence(keys))
 
     # -- Tab management --
 
