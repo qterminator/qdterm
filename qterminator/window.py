@@ -118,6 +118,11 @@ class MainWindow(QMainWindow):
         from qterminator.shadow_screen import ShadowScreenRegistry
         self.shadow_screens = ShadowScreenRegistry()
 
+        # Optional hook: a plugin may install a callable returning the
+        # ``[program, *args]`` list for the next new tab. tmux_mode uses
+        # this to make tabs invisibly tmux-backed. None ⇒ use $SHELL.
+        self._shell_provider = None
+
         self._setup_tabs()
         self._setup_shortcuts()
         self._setup_menubar()
@@ -350,10 +355,25 @@ class MainWindow(QMainWindow):
 
     # -- Tab management --
 
-    def new_tab(self, working_directory=None):
-        """Create a new tab with a single terminal."""
+    def new_tab(self, working_directory=None, shell_command=None):
+        """Create a new tab with a single terminal.
+
+        ``shell_command`` may be an explicit ``[program, *args]`` list to
+        spawn instead of the user's ``$SHELL``; if None and a plugin has
+        installed ``self._shell_provider``, the provider is consulted.
+        Plugins (e.g. tmux_mode) use this hook to make new tabs
+        invisibly tmux-backed.
+        """
+        if shell_command is None and getattr(self, "_shell_provider", None):
+            try:
+                shell_command = self._shell_provider()
+            except Exception:
+                shell_command = None
         split = SplitContainer(Qt.Orientation.Horizontal)
-        terminal = split.add_terminal(working_directory=working_directory)
+        terminal = split.add_terminal(
+            working_directory=working_directory,
+            shell_command=shell_command,
+        )
         self._connect_terminal(terminal)
 
         idx = self._tabs.addTab(split, _short_title(terminal.title()))

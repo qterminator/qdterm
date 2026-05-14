@@ -154,9 +154,28 @@ def test_list_tabs_returns_initial_tab(qtbot, rpc):
     tabs = resp["result"]
     assert isinstance(tabs, list) and len(tabs) == 1
     t = tabs[0]
-    for key in ("id", "title", "shell_pid", "cols", "rows", "attached"):
+    for key in ("id", "title", "shell_pid", "cols", "rows", "attached",
+                "tmux_session"):
         assert key in t
     assert t["attached"] is False
+    # No tmux_mode plugin enabled here, but the key is still present.
+    # (Value is None whether or not the tmux_mode plugin happens to be
+    # loaded — the initial tab spawns the user's $SHELL.)
+    assert t["tmux_session"] is None
+
+
+def test_list_tabs_reports_tmux_session_when_service_present(qtbot, rpc, window):
+    """If MainWindow exposes a tmux_mode service, agent_control surfaces
+    the detection result through list_tabs.tmux_session."""
+    class _FakeService:
+        def get_session_for_terminal(self, _t):
+            return "qterm-fake"
+    window.tmux_mode = _FakeService()
+    try:
+        resp = rpc.call(qtbot, "list_tabs")
+        assert resp["result"][0]["tmux_session"] == "qterm-fake"
+    finally:
+        del window.tmux_mode
 
 
 def test_send_requires_attach(qtbot, rpc):

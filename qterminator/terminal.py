@@ -28,7 +28,8 @@ class TerminalWidget(QWidget):
     activity_detected = pyqtSignal(object)
     silence_detected = pyqtSignal(object)
 
-    def __init__(self, parent=None, working_directory=None, profile="default"):
+    def __init__(self, parent=None, working_directory=None, profile="default",
+                 shell_command=None):
         super().__init__(parent)
         self._profile_name = profile
         self._config = Config()
@@ -37,6 +38,7 @@ class TerminalWidget(QWidget):
         self._group = None  # group name for broadcast
         self._monitor_activity = False
         self._monitor_silence = False
+        self._shell_command = shell_command
         self._setup_ui(working_directory)
         self._connect_signals()
 
@@ -94,9 +96,17 @@ class TerminalWidget(QWidget):
         else:
             self._term.setWorkingDirectory(os.getcwd())
 
-        # Shell
-        shell = os.environ.get("SHELL", "/bin/bash")
-        self._term.setShellProgram(shell)
+        # Shell — either an explicit program+argv (e.g. plugin-driven tmux
+        # mode) or fall back to the user's $SHELL.
+        if self._shell_command:
+            argv = list(self._shell_command)
+            self._term.setShellProgram(argv[0])
+            args = argv[1:]
+            if args:
+                self._term.setArgs(args)
+        else:
+            shell = os.environ.get("SHELL", "/bin/bash")
+            self._term.setShellProgram(shell)
 
         layout.addWidget(self._term)
 

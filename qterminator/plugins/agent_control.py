@@ -407,6 +407,13 @@ class AgentControlPlugin(Plugin):
                 rows = max(1, qtw.height() // line_h)
             except Exception:
                 rows = 0
+            tmux_session = None
+            tmux_mode = getattr(self._window, "tmux_mode", None)
+            if tmux_mode is not None:
+                try:
+                    tmux_session = tmux_mode.get_session_for_terminal(term_widget)
+                except Exception:
+                    tmux_session = None
             out.append({
                 "id": tid,
                 "title": term_widget.title(),
@@ -415,6 +422,7 @@ class AgentControlPlugin(Plugin):
                 "rows": rows,
                 "attached": tid in self.tab_states,
                 "working_directory": term_widget.working_directory(),
+                "tmux_session": tmux_session,
             })
         return out
 

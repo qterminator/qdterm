@@ -15,12 +15,14 @@ class SplitContainer(QSplitter):
         self.setHandleWidth(2)
         self.setStyleSheet("QSplitter::handle { background-color: #555; }")
 
-    def add_terminal(self, terminal=None, working_directory=None):
+    def add_terminal(self, terminal=None, working_directory=None,
+                     shell_command=None):
         """Add a new terminal to this splitter. Returns the terminal."""
         if terminal is None:
             terminal = TerminalWidget(
                 parent=self,
                 working_directory=working_directory,
+                shell_command=shell_command,
             )
         self.addWidget(terminal)
         self._equalize()
