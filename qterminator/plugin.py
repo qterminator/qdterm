@@ -125,15 +125,25 @@ class PluginManager:
             return None
 
         full_name = f"qterminator.plugins.{name}"
-        spec = importlib.util.spec_from_file_location(full_name, path)
-        module = importlib.util.module_from_spec(spec)
-        # Register before exec so dataclasses with stringified
-        # annotations (PEP 563 / ``from __future__ import annotations``)
-        # can resolve ``cls.__module__`` via sys.modules during class
-        # creation — otherwise dataclass field-type inspection raises
-        # AttributeError on the very first plugin load.
-        sys.modules.setdefault(full_name, module)
-        spec.loader.exec_module(module)
+        # If a built-in plugin has already been imported through the
+        # regular import system (e.g. by a test file or by another
+        # plugin doing ``from qterminator.plugins.x import …``), reuse
+        # that module object — building a parallel module from a spec
+        # would create a separate class identity for the same name and
+        # break isinstance checks across the boundary.
+        existing = sys.modules.get(full_name)
+        if existing is not None and getattr(existing, "__file__", None) == path:
+            module = existing
+        else:
+            spec = importlib.util.spec_from_file_location(full_name, path)
+            module = importlib.util.module_from_spec(spec)
+            # Register before exec so dataclasses with stringified
+            # annotations (PEP 563 / ``from __future__ import annotations``)
+            # can resolve ``cls.__module__`` via sys.modules during class
+            # creation — otherwise dataclass field-type inspection raises
+            # AttributeError on the very first plugin load.
+            sys.modules[full_name] = module
+            spec.loader.exec_module(module)
 
         # Find Plugin subclasses in the module
         instances = []
