@@ -124,10 +124,15 @@ class PluginManager:
         if not path:
             return None
 
-        spec = importlib.util.spec_from_file_location(
-            f"qterminator.plugins.{name}", path
-        )
+        full_name = f"qterminator.plugins.{name}"
+        spec = importlib.util.spec_from_file_location(full_name, path)
         module = importlib.util.module_from_spec(spec)
+        # Register before exec so dataclasses with stringified
+        # annotations (PEP 563 / ``from __future__ import annotations``)
+        # can resolve ``cls.__module__`` via sys.modules during class
+        # creation — otherwise dataclass field-type inspection raises
+        # AttributeError on the very first plugin load.
+        sys.modules.setdefault(full_name, module)
         spec.loader.exec_module(module)
 
         # Find Plugin subclasses in the module
