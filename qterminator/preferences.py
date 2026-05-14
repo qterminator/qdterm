@@ -1,7 +1,7 @@
 """Preferences dialog for QTerminator."""
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont, QFontDatabase
+from PyQt6.QtGui import QFont, QFontDatabase, QKeySequence
 from PyQt6.QtWidgets import (
     QAbstractItemView, QApplication, QDialog, QTabWidget, QVBoxLayout,
     QHBoxLayout, QFormLayout, QComboBox, QSpinBox, QCheckBox,
@@ -10,8 +10,40 @@ from PyQt6.QtWidgets import (
     QFontDialog, QFrame, QLineEdit, QListWidget, QListWidgetItem,
     QStackedWidget, QScrollArea, QSplitter, QSizePolicy,
     QStyledItemDelegate, QTableWidget, QTableWidgetItem,
+    QTreeWidget, QTreeWidgetItem,
 )
 from PyQt6.QtCore import QModelIndex
+from PyQt6.QtGui import QBrush, QColor
+
+
+# Action name -> human-readable category. Anything not listed falls into
+# "Other". Categories themselves are rendered in this declared order.
+SHORTCUT_CATEGORIES: list[tuple[str, list[str]]] = [
+    ("File", ["new_tab", "new_window", "close_terminal", "quit"]),
+    ("Edit", ["copy", "paste", "search", "reset", "reset_clear", "preferences"]),
+    ("View & Zoom", [
+        "split_horizontal", "split_vertical", "rotate_splits",
+        "maximize_terminal", "full_screen",
+        "zoom_in", "zoom_out", "zoom_normal", "toggle_scrollbar",
+    ]),
+    ("Terminal", [
+        "edit_terminal_title", "edit_tab_title", "edit_window_title", "read_only",
+    ]),
+    ("Tabs", [
+        "next_tab", "prev_tab", "cycle_next", "cycle_prev",
+        "move_tab_left", "move_tab_right",
+        "switch_to_tab_1", "switch_to_tab_2", "switch_to_tab_3",
+        "switch_to_tab_4", "switch_to_tab_5", "switch_to_tab_6",
+        "switch_to_tab_7", "switch_to_tab_8", "switch_to_tab_9",
+    ]),
+    ("Splits", [
+        "navigate_left", "navigate_right", "navigate_up", "navigate_down",
+        "resize_left", "resize_right", "resize_up", "resize_down",
+    ]),
+    ("Scrollback", ["scroll_page_up", "scroll_page_down"]),
+    ("Profiles", ["next_profile", "prev_profile"]),
+    ("Window", ["toggle_menubar"]),
+]
 
 from QTermWidget import QTermWidget
 
@@ -369,7 +401,8 @@ class PreferencesDialog(QDialog):
 
         info = QLabel(tr(
             "Double-click a shortcut to record a new key combination. "
-            "Right-click a row to clear or reset to default."
+            "Right-click a row to clear or reset to default. "
+            "Duplicates are highlighted in red."
         ))
         info.setWordWrap(True)
         info.setStyleSheet("color: palette(placeholder-text);")
@@ -381,67 +414,137 @@ class PreferencesDialog(QDialog):
         self._shortcut_defaults: dict[str, str] = dict(
             _CFG_DEFAULTS.get("keybindings", {})
         )
-        # Source of truth for action ordering = current config (already merged).
-        self._shortcut_actions: list[str] = sorted(self._config.keybindings.keys())
+        all_names = set(self._config.keybindings.keys())
+        # Build the ordered list of (category, [action_names]) and let any
+        # action absent from SHORTCUT_CATEGORIES fall into "Other".
+        categorized: list[tuple[str, list[str]]] = []
+        consumed = set()
+        for cat_label, names in SHORTCUT_CATEGORIES:
+            present = [n for n in names if n in all_names]
+            if present:
+                categorized.append((cat_label, present))
+                consumed.update(present)
+        leftover = sorted(all_names - consumed)
+        if leftover:
+            categorized.append(("Other", leftover))
+        # Flat list preserved for _apply() and tests.
+        self._shortcut_actions: list[str] = [
+            name for _, names in categorized for name in names
+        ]
 
-        self._shortcut_table = QTableWidget(
-            len(self._shortcut_actions), 2, widget
+        self._shortcut_tree = QTreeWidget(widget)
+        self._shortcut_tree.setHeaderLabels([tr("Action"), tr("Shortcut")])
+        self._shortcut_tree.setColumnCount(2)
+        self._shortcut_tree.setRootIsDecorated(True)
+        self._shortcut_tree.setAlternatingRowColors(True)
+        self._shortcut_tree.header().setSectionResizeMode(
+            0, QHeaderView.ResizeMode.Stretch
         )
-        self._shortcut_table.setHorizontalHeaderLabels(
-            [tr("Action"), tr("Shortcut")]
+        self._shortcut_tree.header().setSectionResizeMode(
+            1, QHeaderView.ResizeMode.ResizeToContents
         )
-        self._shortcut_table.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.Stretch
-        )
-        self._shortcut_table.verticalHeader().setVisible(False)
-        self._shortcut_table.setEditTriggers(
+        self._shortcut_tree.setEditTriggers(
             QAbstractItemView.EditTrigger.DoubleClicked
             | QAbstractItemView.EditTrigger.SelectedClicked
             | QAbstractItemView.EditTrigger.EditKeyPressed
         )
-        self._shortcut_table.setItemDelegateForColumn(
-            1, _KeySequenceDelegate(self._shortcut_table)
+        self._shortcut_tree.setItemDelegateForColumn(
+            1, _KeySequenceDelegate(self._shortcut_tree)
         )
-        self._shortcut_table.setContextMenuPolicy(
+        self._shortcut_tree.setContextMenuPolicy(
             Qt.ContextMenuPolicy.CustomContextMenu
         )
-        self._shortcut_table.customContextMenuRequested.connect(
+        self._shortcut_tree.customContextMenuRequested.connect(
             self._on_shortcut_context_menu
         )
 
-        for r, name in enumerate(self._shortcut_actions):
-            label_item = QTableWidgetItem(_humanize_action_name(name))
-            label_item.setFlags(label_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            label_item.setData(Qt.ItemDataRole.UserRole, name)
-            self._shortcut_table.setItem(r, 0, label_item)
-            self._shortcut_table.setItem(
-                r, 1, QTableWidgetItem(self._config.keybindings.get(name, ""))
-            )
-        layout.addWidget(self._shortcut_table, 1)
+        # action_name -> leaf QTreeWidgetItem. Lets _apply() / conflict
+        # checks find each leaf without walking the tree.
+        self._shortcut_leaves: dict[str, QTreeWidgetItem] = {}
+        # action_name -> bool, mirrored from _refresh_shortcut_conflicts().
+        # Tests and any external callers can query this without sniffing brushes.
+        self._shortcut_conflicts: dict[str, bool] = {}
+
+        for cat_label, names in categorized:
+            cat_item = QTreeWidgetItem(self._shortcut_tree, [cat_label, ""])
+            font = cat_item.font(0)
+            font.setBold(True)
+            cat_item.setFont(0, font)
+            cat_item.setFlags(cat_item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+            cat_item.setFirstColumnSpanned(True)
+            for name in names:
+                leaf = QTreeWidgetItem(cat_item, [
+                    _humanize_action_name(name),
+                    self._config.keybindings.get(name, ""),
+                ])
+                leaf.setData(0, Qt.ItemDataRole.UserRole, name)
+                # Only the shortcut column is editable.
+                leaf.setFlags(
+                    leaf.flags() | Qt.ItemFlag.ItemIsEditable
+                )
+                self._shortcut_leaves[name] = leaf
+            cat_item.setExpanded(True)
+
+        self._shortcut_tree.itemChanged.connect(self._on_shortcut_changed)
+        layout.addWidget(self._shortcut_tree, 1)
+
+        self._refresh_shortcut_conflicts()
 
         return widget
 
+    def _on_shortcut_changed(self, item, column):
+        if column == 1:
+            self._refresh_shortcut_conflicts()
+
+    def _refresh_shortcut_conflicts(self) -> None:
+        """Repaint conflict highlighting across every leaf.
+
+        Two non-empty shortcuts with the same QKeySequence (after Qt
+        normalisation) flag both leaves in red with a tooltip.
+        """
+        by_seq: dict[str, list[tuple[str, QTreeWidgetItem]]] = {}
+        for name, leaf in self._shortcut_leaves.items():
+            raw = leaf.text(1).strip()
+            if not raw:
+                continue
+            normalised = QKeySequence(raw).toString()
+            by_seq.setdefault(normalised, []).append((name, leaf))
+
+        conflict_brush = QBrush(QColor("#cf6679"))
+        for name, leaf in self._shortcut_leaves.items():
+            raw = leaf.text(1).strip()
+            normalised = QKeySequence(raw).toString() if raw else ""
+            siblings = by_seq.get(normalised, [])
+            is_conflict = len(siblings) > 1
+            self._shortcut_conflicts[name] = is_conflict
+            if is_conflict:
+                for col in (0, 1):
+                    leaf.setForeground(col, conflict_brush)
+                others = [s.text(0) for n, s in siblings if n != name]
+                leaf.setToolTip(1, tr("Conflicts with: ") + ", ".join(others))
+            else:
+                # Clear the foreground role entirely so we fall back to the
+                # palette text colour instead of a NoBrush solid that paints
+                # as transparent on some styles.
+                for col in (0, 1):
+                    leaf.setData(col, Qt.ItemDataRole.ForegroundRole, None)
+                leaf.setToolTip(1, "")
+
     def _on_shortcut_context_menu(self, pos):
-        index = self._shortcut_table.indexAt(pos)
-        if not index.isValid():
-            return
-        row = index.row()
-        label_item = self._shortcut_table.item(row, 0)
-        if label_item is None:
-            return
-        name = label_item.data(Qt.ItemDataRole.UserRole)
-        menu = QMenu(self._shortcut_table)
+        item = self._shortcut_tree.itemAt(pos)
+        if item is None or item.parent() is None:
+            return  # ignore category rows
+        name = item.data(0, Qt.ItemDataRole.UserRole)
+        menu = QMenu(self._shortcut_tree)
         act_clear = menu.addAction(tr("Clear shortcut"))
         act_reset = menu.addAction(tr("Reset to default"))
-        chosen = menu.exec(self._shortcut_table.viewport().mapToGlobal(pos))
+        chosen = menu.exec(self._shortcut_tree.viewport().mapToGlobal(pos))
         if chosen is None:
             return
         if chosen is act_clear:
-            self._shortcut_table.item(row, 1).setText("")
+            item.setText(1, "")
         elif chosen is act_reset:
-            self._shortcut_table.item(row, 1).setText(
-                self._shortcut_defaults.get(name, "")
-            )
+            item.setText(1, self._shortcut_defaults.get(name, ""))
 
     def _load_current_settings(self):
         profile = self._config.get_profile("default")
@@ -531,9 +634,9 @@ class PreferencesDialog(QDialog):
         self._config.set("general", "show_menubar", show_menubar)
 
         # Persist shortcut edits and re-bind on the parent window.
-        for r, name in enumerate(self._shortcut_actions):
-            cell = self._shortcut_table.item(r, 1)
-            keys = cell.text().strip() if cell is not None else ""
+        for name in self._shortcut_actions:
+            leaf = self._shortcut_leaves.get(name)
+            keys = leaf.text(1).strip() if leaf is not None else ""
             self._config.set("keybindings", name, keys)
         if hasattr(parent, "apply_keybindings"):
             parent.apply_keybindings()
