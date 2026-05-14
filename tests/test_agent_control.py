@@ -178,6 +178,43 @@ def test_list_tabs_reports_tmux_session_when_service_present(qtbot, rpc, window)
         del window.tmux_mode
 
 
+def test_start_stop_recording_via_rpc(qtbot, rpc, window, tmp_path):
+    """The agent_control RPC surface exposes start/stop_recording when
+    the asciinema_record plugin is loaded. Drive a short recording
+    through the socket and verify the cast file is written."""
+    # Load the recorder service onto the window (the plugin would do
+    # this in activate, but we install it directly to keep this test
+    # focused on the agent_control RPC contract).
+    from qterminator.plugins.asciinema_record import AsciinemaRecorderService
+    window.asciinema_recorder = AsciinemaRecorderService(
+        str(tmp_path), window.shadow_screens,
+    )
+    try:
+        tid = rpc.call(qtbot, "list_tabs")["result"][0]["id"]
+        rpc.call(qtbot, "attach", tab_id=tid)
+        cast_path = str(tmp_path / "rpc.cast")
+        start = rpc.call(qtbot, "start_recording",
+                         tab_id=tid, path=cast_path)
+        assert start["result"]["path"] == cast_path
+        # Let the shell prompt write something into the cast.
+        rpc.call(qtbot, "send_text", tab_id=tid, text="echo CAST_OK\n")
+        qtbot.wait(300)
+        # Tabs should report recording=True.
+        listing = rpc.call(qtbot, "list_tabs")["result"]
+        assert listing[0]["recording"] is True
+        assert listing[0]["recording_path"] == cast_path
+        stop = rpc.call(qtbot, "stop_recording", tab_id=tid)
+        assert stop["result"]["path"] == cast_path
+        assert stop["result"]["event_count"] >= 1
+        # Cast file has a v3 header.
+        import json
+        with open(cast_path) as f:
+            header = json.loads(f.readline())
+        assert header["version"] == 3
+    finally:
+        del window.asciinema_recorder
+
+
 def test_list_tabs_reports_shared_via_mosh(qtbot, rpc, window):
     """When tmux_share exposes active shares, list_tabs surfaces the
     list of UDP ports under shared_via_mosh."""

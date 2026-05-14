@@ -219,6 +219,34 @@ def build_server(client: AgentControlClient,
         """Close a tab. The shell process is signalled to exit."""
         return client.call("close_tab", tab_id=tab_id)
 
+    @mcp.tool()
+    def start_recording(tab_id: int,
+                        path: Optional[str] = None,
+                        capture_input: bool = False) -> dict:
+        """Begin recording a tab to an asciicast v3 ``.cast`` file.
+
+        Default save dir is ``~/Videos/qterminator/``; pass ``path``
+        to override. ``capture_input`` records keystrokes too (off by
+        default — recording input captures passwords). Tab must be
+        attached. Returns ``{path, started_at, cols, rows,
+        capture_input}``.
+        """
+        return client.call(
+            "start_recording", tab_id=tab_id, path=path,
+            capture_input=capture_input,
+        )
+
+    @mcp.tool()
+    def stop_recording(tab_id: int,
+                       exit_status: Optional[int] = None) -> dict:
+        """Stop the active recording on a tab. Returns ``{path,
+        bytes_written, event_count, duration}``. The cast file is
+        flushed and closed; ``asciinema play <path>`` will replay it.
+        Tab must be attached."""
+        return client.call(
+            "stop_recording", tab_id=tab_id, exit_status=exit_status,
+        )
+
     return mcp
 
 

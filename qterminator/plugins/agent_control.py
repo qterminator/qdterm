@@ -421,6 +421,17 @@ class AgentControlPlugin(Plugin):
                     shared_via_mosh = list(tmux_share.ports_for(tmux_session))
                 except Exception:
                     shared_via_mosh = []
+            recording = False
+            recording_path = None
+            recorder = getattr(self._window, "asciinema_recorder", None)
+            if recorder is not None:
+                try:
+                    rec = recorder.get_recording(term_widget)
+                    if rec is not None:
+                        recording = True
+                        recording_path = rec.path
+                except Exception:
+                    pass
             out.append({
                 "id": tid,
                 "title": term_widget.title(),
@@ -431,6 +442,8 @@ class AgentControlPlugin(Plugin):
                 "working_directory": term_widget.working_directory(),
                 "tmux_session": tmux_session,
                 "shared_via_mosh": shared_via_mosh,
+                "recording": recording,
+                "recording_path": recording_path,
             })
         return out
 
@@ -504,6 +517,51 @@ class AgentControlPlugin(Plugin):
         if not terms:
             raise _RpcError(-32003, "open_tab succeeded but no terminals?")
         return {"id": id(terms[-1])}
+
+    # -- recording (asciinema_record plugin must be loaded) --
+
+    def _recorder(self):
+        recorder = getattr(self._window, "asciinema_recorder", None)
+        if recorder is None:
+            raise _RpcError(-32005, "asciinema_record plugin not loaded")
+        return recorder
+
+    def rpc_start_recording(self, client, tab_id: int,
+                            path: Optional[str] = None,
+                            capture_input: bool = False):
+        if tab_id not in client.attached_tabs:
+            raise _RpcError(-32001, "not attached")
+        term_widget = self._get_terminal(tab_id)
+        rec = self._recorder().start(
+            term_widget, path=path, capture_input=capture_input,
+        )
+        return {
+            "path": rec.path,
+            "started_at": rec.started_at,
+            "cols": rec._cols,
+            "rows": rec._rows,
+            "capture_input": rec.capture_input,
+        }
+
+    def rpc_stop_recording(self, client, tab_id: int,
+                           exit_status: Optional[int] = None):
+        if tab_id not in client.attached_tabs:
+            raise _RpcError(-32001, "not attached")
+        term_widget = self._get_terminal(tab_id)
+        recorder = self._recorder()
+        rec = recorder.get_recording(term_widget)
+        if rec is None:
+            raise _RpcError(-32006, "not recording")
+        bytes_written = rec.bytes_written
+        event_count = rec.event_count
+        duration = rec.duration
+        path = recorder.stop(term_widget, exit_status=exit_status)
+        return {
+            "path": path,
+            "bytes_written": bytes_written,
+            "event_count": event_count,
+            "duration": round(duration, 6),
+        }
 
     def rpc_close_tab(self, _client, tab_id: int):
         term_widget = self._get_terminal(tab_id)

@@ -213,6 +213,7 @@ def test_all_expected_tools_registered():
     expected = {
         "list_tabs", "attach", "detach", "send_text", "send_keys",
         "get_screen", "tail_stream", "screenshot", "open_tab", "close_tab",
+        "start_recording", "stop_recording",
     }
     assert expected.issubset(names), f"missing: {expected - names}"
 
