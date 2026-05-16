@@ -248,6 +248,18 @@ def main():
     if cmd_text and window._active_terminal:
         window._active_terminal.send_text(cmd_text + "\n")
 
+    # Register on the qdistro App1 session bus so PodApps sees us and
+    # peer apps' Send-To menus can find us. Held on the window to keep
+    # the bus name claim alive for the process lifetime; release is
+    # automatic when window (and so the receiver) is GC'd at exit.
+    try:
+        from qterminator import qdistro_integration as _qdi
+        window._qdistro_receiver = _qdi.maybe_install(window)
+    except Exception as _qd_e:  # noqa: BLE001
+        # Never let a bus / SDK quirk block app startup.
+        print(f"[qterminator] qdistro App1 registration failed: {_qd_e}",
+              file=sys.stderr, flush=True)
+
     # Window state
     if args.fullscreen:
         window.showFullScreen()

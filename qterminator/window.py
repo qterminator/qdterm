@@ -170,6 +170,13 @@ class MainWindow(QMainWindow):
         edit_menu.addAction(self._make_action(tr("&Copy"), "copy", self._copy, icon="edit-copy"))
         edit_menu.addAction(self._make_action(tr("&Paste"), "paste", self._paste, icon="edit-paste"))
         edit_menu.addSeparator()
+        # qdistro Send-To: populated lazily from the broker so the menu
+        # reflects whatever receivers are currently registered, not a
+        # frozen snapshot taken at startup.
+        self._send_to_menu = edit_menu.addMenu(tr("Send &To"))
+        self._send_to_menu.setIcon(QIcon.fromTheme("document-send"))
+        self._send_to_menu.aboutToShow.connect(self._populate_send_to_menu)
+        edit_menu.addSeparator()
         edit_menu.addAction(self._make_action(tr("&Search"), "search", self._search, icon="edit-find"))
         edit_menu.addAction(self._make_action(tr("&Reset"), "reset", self._reset, icon="view-refresh"))
         edit_menu.addAction(self._make_action(tr("Reset && C&lear"), "reset_clear", self._reset_clear, icon="edit-clear"))
@@ -243,6 +250,81 @@ class MainWindow(QMainWindow):
         for cat in sorted(by_cat):
             if cat not in seen:
                 self._add_tools_submenu(cat, by_cat[cat])
+
+    def _populate_send_to_menu(self):
+        """Rebuild the Send-To submenu from the broker's receiver list.
+
+        Lazily populated on aboutToShow so the menu always reflects
+        the live state of peer apps rather than what was running at
+        QTerminator startup. Same-silo entries dispatch through the
+        broker's same_silo fast path (no admin prompt); cross-silo
+        entries trigger a one-shot admin approval the user sees in
+        the qdistro admin app.
+        """
+        self._send_to_menu.clear()
+        # Capture the current selection / output snapshot once so all
+        # generated lambdas see the same payload regardless of how
+        # long the menu sits open. Empty payloads still create the
+        # menu so the user can see the choice — disabled with a hint.
+        payload = self._collect_send_to_payload()
+        from qterminator import qdistro_integration as _qi
+        targets = _qi.send_to_targets(kind="text/plain")
+        if not targets:
+            act = QAction(tr("(no receivers running)"), self._send_to_menu)
+            act.setEnabled(False)
+            self._send_to_menu.addAction(act)
+            return
+        for row in targets:
+            label = row["name"]
+            silo = row.get("silo") or ""
+            if silo:
+                label = f"{label}  [{silo}]"
+            act = QAction(label, self._send_to_menu)
+            if not payload:
+                act.setEnabled(False)
+                act.setToolTip(tr("Select text in the terminal first"))
+            else:
+                uid = int(row["uid"])
+                svc = str(row["service"])
+                act.triggered.connect(
+                    lambda checked=False, u=uid, s=svc, p=payload:
+                        self._do_send_to(u, s, p))
+            self._send_to_menu.addAction(act)
+
+    def _collect_send_to_payload(self) -> str:
+        """Best-effort selection grab from the active terminal.
+
+        Returns "" if nothing is selected; callers gate the menu on
+        the empty case rather than letting an empty drop hit the
+        broker (which would still succeed but pollute the audit log
+        with junk requests).
+        """
+        term = self._active_terminal
+        if term is None:
+            return ""
+        try:
+            if hasattr(term, "selectedText"):
+                txt = term.selectedText()
+                if txt:
+                    return str(txt)
+            if hasattr(term, "selection"):
+                txt = term.selection()
+                if txt:
+                    return str(txt)
+        except Exception:
+            pass
+        return ""
+
+    def _do_send_to(self, target_uid: int, target_service: str, payload: str):
+        from qterminator import qdistro_integration as _qi
+        ok = _qi.send_payload(target_uid, target_service, payload,
+                              kind="text/plain")
+        bar = self.statusBar() if hasattr(self, "statusBar") else None
+        if bar is not None:
+            if ok:
+                bar.showMessage(tr("Sent to {svc}").format(svc=target_service), 3000)
+            else:
+                bar.showMessage(tr("Send to {svc} failed").format(svc=target_service), 4000)
 
     def _add_tools_submenu(self, category, items):
         sub = QMenu(category, self._tools_menu)
