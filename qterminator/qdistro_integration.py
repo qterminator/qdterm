@@ -1,7 +1,7 @@
 """Wire QTerminator into the qdistro App1 launcher contract.
 
 Imported once from ``qterminator.__main__`` after the main window is
-built. The receiver claims ``com.qdistro.QTerminator.uid<NNNN>`` on
+built. The receiver claims ``org.qdistro.QTerminator.uid<NNNN>`` on
 the session bus so PodApps' broker-driven scan sees the running app
 and the "Send To… → QTerminator" entry in peer apps' menus works.
 
@@ -96,7 +96,7 @@ def send_to_targets(*, kind: str = "text/plain") -> list[dict]:
     if _app_receiver is None:
         return []
     try:
-        self_service = f"com.qdistro.{APP_FRIENDLY_NAME}.uid{os.geteuid()}"
+        self_service = f"org.qdistro.{APP_FRIENDLY_NAME}.uid{os.geteuid()}"
         return _app_receiver.send_to_menu_targets(
             self_service=self_service, kind=kind)
     except Exception as e:  # noqa: BLE001
