@@ -21,7 +21,10 @@ Usage:
 import time
 from typing import Optional
 
-import pyte
+try:
+    import pyte
+except ModuleNotFoundError:
+    pyte = None
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QKeySequence, QShortcut
@@ -294,6 +297,8 @@ class InstantReplayPlugin(Plugin):
         self._event_filter = None
 
     def activate(self, app_controller):
+        if pyte is None:
+            return
         cfg = Config()
         enabled = cfg.get("plugins", "instant_replay", "enabled", default=False)
         if not enabled:
