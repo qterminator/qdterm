@@ -591,7 +591,7 @@ class CommandTelemetryService:
         interpret as input and try to execute). Until a display-only
         write API is available, fall back to tab_status display.
         """
-        self._show_tab_status(terminal, tele)
+        self._update_tab_status(terminal, tele)
 
     def _fade_fire(self, terminal, timer: "QTimer") -> None:
         """Bridge slot for fade timers: clear the title and drop the
