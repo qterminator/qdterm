@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import hmac
 import os
 import select
 import socket
@@ -11,14 +12,84 @@ import struct
 import subprocess
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Optional
 
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+from cryptography.exceptions import InvalidSignature
+
 from PyQt6.QtWidgets import QMessageBox
 
-from qterminator.config import Config
+from qterminator.config import Config, CONFIG_DIR
 from qterminator.plugin import MenuProvider
+
+
+_AUTHORIZED_KEYS_PATH = os.path.join(CONFIG_DIR, "authorized_keys")
+
+
+def _load_authorized_keys(path: str) -> list[Ed25519PublicKey]:
+    """Parse an ``authorized_keys`` file and return Ed25519 public keys.
+
+    Each line should be: ``ssh-ed25519 <base64-key> [comment]``
+    Blank lines and lines starting with ``#`` are skipped.
+    Non-Ed25519 key types are silently ignored.
+    """
+    keys: list[Ed25519PublicKey] = []
+    if not os.path.isfile(path):
+        return keys
+    with open(path, "r", encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = line.split()
+            if len(parts) < 2:
+                continue
+            if parts[0] != "ssh-ed25519":
+                continue
+            try:
+                raw = base64.b64decode(parts[1])
+                key = Ed25519PublicKey.from_public_bytes(raw[19:51])
+                keys.append(key)
+            except Exception:
+                # Malformed key — skip
+                continue
+    return keys
+
+
+def _verify_ed25519(
+    authorized_keys: list[Ed25519PublicKey],
+    challenge: bytes,
+    pubkey_bytes: bytes,
+    signature: bytes,
+) -> bool:
+    """Verify *signature* over *challenge* using *pubkey_bytes*.
+
+    Returns True only if *pubkey_bytes* matches one of the
+    *authorized_keys* and the signature is valid.
+    """
+    try:
+        client_key = Ed25519PublicKey.from_public_bytes(pubkey_bytes)
+    except Exception:
+        return False
+
+    # Check if the client's public key matches any authorized key.
+    # Compare the raw 32-byte representation for constant-time-ish matching.
+    client_raw = client_key.public_bytes_raw()
+    matched = False
+    for ak in authorized_keys:
+        if hmac.compare_digest(ak.public_bytes_raw(), client_raw):
+            matched = True
+            break
+    if not matched:
+        return False
+
+    try:
+        client_key.verify(signature, challenge)
+        return True
+    except InvalidSignature:
+        return False
 
 
 _HTML = """<!doctype html>
@@ -29,15 +100,45 @@ _HTML = """<!doctype html>
 <style>
 body { margin: 0; background: #111; color: #ddd; font: 14px/1.25 monospace; }
 #term { white-space: pre; padding: 12px; outline: none; min-height: 100vh; }
+#auth-msg { padding: 24px; color: #f88; font-size: 16px; }
 </style>
 </head>
-<body><pre id="term" tabindex="0"></pre>
+<body>
+<div id="auth-msg" style="display:none"></div>
+<pre id="term" tabindex="0"></pre>
 <script>
 const term = document.getElementById("term");
+const authMsg = document.getElementById("auth-msg");
 const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
-ws.onmessage = (ev) => { term.textContent = ev.data; };
+let authenticated = false;
+let authRequired = false;
+ws.onmessage = (ev) => {
+  const data = ev.data;
+  if (!authenticated && data.startsWith("AUTH_CHALLENGE ")) {
+    authRequired = true;
+    term.style.display = "none";
+    authMsg.style.display = "block";
+    authMsg.textContent = "Authentication required. Use the qterminator CLI to set up key-based auth. " +
+      "Browser-side key signing is not yet supported.";
+    return;
+  }
+  if (!authenticated && data === "AUTH_OK") {
+    authenticated = true;
+    authMsg.style.display = "none";
+    term.style.display = "block";
+    term.focus();
+    return;
+  }
+  if (!authenticated && data === "AUTH_FAIL") {
+    authMsg.textContent = "Authentication failed. Connection closed.";
+    return;
+  }
+  if (!authRequired) { authenticated = true; }
+  term.textContent = data;
+};
 term.focus();
 term.addEventListener("keydown", (ev) => {
+  if (!authenticated) return;
   const special = {Enter:"\\r", Backspace:"\\x7f", Tab:"\\t",
     ArrowUp:"\\x1b[A", ArrowDown:"\\x1b[B", ArrowRight:"\\x1b[C", ArrowLeft:"\\x1b[D"};
   let text = special[ev.key] || (ev.key.length === 1 ? ev.key : "");
@@ -151,6 +252,67 @@ class _WebHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _do_auth(self, sock: socket.socket) -> bool:
+        """Run the Ed25519 challenge-response handshake.
+
+        Returns True if the client is authenticated, False otherwise.
+        The caller should close the connection on False.
+        """
+        authorized_keys = self.server.authorized_keys
+        challenge = os.urandom(32)
+        challenge_b64 = base64.b64encode(challenge).decode("ascii")
+        try:
+            _ws_send_text(sock, f"AUTH_CHALLENGE {challenge_b64}")
+        except OSError:
+            return False
+
+        # Wait for AUTH_RESPONSE (timeout 10 s)
+        sock.settimeout(10.0)
+        try:
+            msg = _ws_recv_text(sock)
+        except (OSError, TimeoutError):
+            return False
+        finally:
+            sock.settimeout(None)
+
+        if msg is None or not msg.startswith("AUTH_RESPONSE "):
+            try:
+                _ws_send_text(sock, "AUTH_FAIL")
+            except OSError:
+                pass
+            return False
+
+        parts = msg.split(" ", 2)
+        if len(parts) != 3:
+            try:
+                _ws_send_text(sock, "AUTH_FAIL")
+            except OSError:
+                pass
+            return False
+
+        try:
+            pubkey_bytes = base64.b64decode(parts[1])
+            signature = base64.b64decode(parts[2])
+        except Exception:
+            try:
+                _ws_send_text(sock, "AUTH_FAIL")
+            except OSError:
+                pass
+            return False
+
+        if _verify_ed25519(authorized_keys, challenge, pubkey_bytes, signature):
+            try:
+                _ws_send_text(sock, "AUTH_OK")
+            except OSError:
+                return False
+            return True
+        else:
+            try:
+                _ws_send_text(sock, "AUTH_FAIL")
+            except OSError:
+                pass
+            return False
+
     def _websocket(self):
         key = self.headers.get("Sec-WebSocket-Key")
         if not key:
@@ -165,6 +327,16 @@ class _WebHandler(BaseHTTPRequestHandler):
         sock.setblocking(True)
         session = self.server.share.session
         read_only = self.server.share.read_only
+
+        # Auth required for non-loopback, non-read-only shares
+        if self.server.auth_required:
+            if not self._do_auth(sock):
+                try:
+                    sock.close()
+                except OSError:
+                    pass
+                return
+
         while not self.server.share.stopped:
             try:
                 _ws_send_text(sock, _capture(session))
@@ -209,19 +381,40 @@ class WebShare:
 class _ShareHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
 
-    def __init__(self, addr, handler, share):
+    def __init__(self, addr, handler, share, *,
+                 auth_required: bool = False,
+                 authorized_keys: Optional[list[Ed25519PublicKey]] = None):
         super().__init__(addr, handler)
         self.share = share
+        self.auth_required = auth_required
+        self.authorized_keys: list[Ed25519PublicKey] = authorized_keys or []
 
 
 _LOOPBACK_BINDS = frozenset({"127.0.0.1", "::1", "localhost"})
 
 
 class TmuxWebShareService:
-    def __init__(self, bind: str = "127.0.0.1", read_only: bool = True):
+    def __init__(self, bind: str = "127.0.0.1", read_only: bool = True,
+                 authorized_keys_path: Optional[str] = None):
         self.bind = bind
-        if bind not in _LOOPBACK_BINDS:
-            read_only = True
+        self.authorized_keys_path = authorized_keys_path or _AUTHORIZED_KEYS_PATH
+        self._auth_required = False
+
+        if bind not in _LOOPBACK_BINDS and not read_only:
+            # Non-loopback read-write requires authorized_keys with at least one key
+            keys = _load_authorized_keys(self.authorized_keys_path)
+            if not keys:
+                raise RuntimeError(
+                    f"Non-loopback read-write web share requires at least one "
+                    f"Ed25519 key in {self.authorized_keys_path}"
+                )
+            self._authorized_keys = keys
+            self._auth_required = True
+        else:
+            if bind not in _LOOPBACK_BINDS:
+                read_only = True
+            self._authorized_keys: list[Ed25519PublicKey] = []
+
         self.read_only = read_only
         self._shares: dict[str, list[WebShare]] = {}
 
@@ -234,7 +427,11 @@ class TmuxWebShareService:
             "read_only": self.read_only,
             "stopped": False,
         })()
-        server = _ShareHTTPServer((self.bind, port), _WebHandler, placeholder)
+        server = _ShareHTTPServer(
+            (self.bind, port), _WebHandler, placeholder,
+            auth_required=self._auth_required,
+            authorized_keys=self._authorized_keys,
+        )
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         share = WebShare(
             session=session,

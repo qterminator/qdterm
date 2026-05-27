@@ -6,9 +6,17 @@ import socket
 import struct
 import urllib.request
 
+import pytest
+from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+    Ed25519PrivateKey,
+    Ed25519PublicKey,
+)
+
 from qterminator.plugins.tmux_ssh_share import TmuxSSHShareService, SSHShare
 from qterminator.plugins.tmux_web_share import (
     TmuxWebShareService,
+    _load_authorized_keys,
+    _verify_ed25519,
     _ws_accept,
 )
 
@@ -92,7 +100,15 @@ def test_tmux_web_share_serves_browser_page():
 def _masked_frame(text: str) -> bytes:
     payload = text.encode("utf-8")
     mask = b"abcd"
-    header = bytearray([0x81, 0x80 | len(payload)])
+    header = bytearray([0x81])
+    if len(payload) < 126:
+        header.append(0x80 | len(payload))
+    elif len(payload) < 65536:
+        header.append(0x80 | 126)
+        header.extend(struct.pack("!H", len(payload)))
+    else:
+        header.append(0x80 | 127)
+        header.extend(struct.pack("!Q", len(payload)))
     return bytes(header) + mask + bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
 
 
@@ -529,9 +545,16 @@ def test_web_handler_returns_200_for_get():
 # Security: non-loopback bind forces read_only
 # ---------------------------------------------------------------------------
 
-def test_web_share_public_bind_forces_read_only():
-    """Non-loopback bind forces read_only=True regardless of constructor arg."""
-    svc = TmuxWebShareService(bind="0.0.0.0", read_only=False)
+def test_web_share_public_bind_no_keys_raises():
+    """Non-loopback + read_only=False without authorized_keys raises."""
+    with pytest.raises(RuntimeError, match="at least one Ed25519 key"):
+        TmuxWebShareService(bind="0.0.0.0", read_only=False,
+                            authorized_keys_path="/nonexistent/path")
+
+
+def test_web_share_public_bind_read_only_forces_true():
+    """Non-loopback bind with read_only=True stays read_only."""
+    svc = TmuxWebShareService(bind="0.0.0.0", read_only=True)
     assert svc.read_only is True
 
 
@@ -614,3 +637,318 @@ def test_ws_recv_text_handles_ping_opcode():
             return self._buf.read(n)
 
     assert _ws_recv_text(_FakeSock(frame)) == ""
+
+
+# ---------------------------------------------------------------------------
+# Ed25519 authorized_keys helpers
+# ---------------------------------------------------------------------------
+
+def _make_ssh_ed25519_line(privkey: Ed25519PrivateKey, comment: str = "test") -> str:
+    """Build an ``ssh-ed25519 <b64> <comment>`` line from a private key."""
+    raw = privkey.public_key().public_bytes_raw()
+    blob = (
+        struct.pack("!I", 11) + b"ssh-ed25519"
+        + struct.pack("!I", 32) + raw
+    )
+    return f"ssh-ed25519 {base64.b64encode(blob).decode()} {comment}"
+
+
+def test_load_authorized_keys_parses_valid_file(tmp_path):
+    pk1 = Ed25519PrivateKey.generate()
+    pk2 = Ed25519PrivateKey.generate()
+    akfile = tmp_path / "authorized_keys"
+    akfile.write_text(
+        f"# a comment\n"
+        f"{_make_ssh_ed25519_line(pk1, 'user1')}\n"
+        f"\n"
+        f"ssh-rsa AAAA... ignored-rsa-key\n"
+        f"{_make_ssh_ed25519_line(pk2, 'user2')}\n"
+    )
+    keys = _load_authorized_keys(str(akfile))
+    assert len(keys) == 2
+    assert keys[0].public_bytes_raw() == pk1.public_key().public_bytes_raw()
+    assert keys[1].public_bytes_raw() == pk2.public_key().public_bytes_raw()
+
+
+def test_load_authorized_keys_missing_file(tmp_path):
+    keys = _load_authorized_keys(str(tmp_path / "nonexistent"))
+    assert keys == []
+
+
+def test_verify_ed25519_valid_signature():
+    pk = Ed25519PrivateKey.generate()
+    challenge = os.urandom(32)
+    sig = pk.sign(challenge)
+    authorized = [pk.public_key()]
+    assert _verify_ed25519(authorized, challenge, pk.public_key().public_bytes_raw(), sig)
+
+
+def test_verify_ed25519_wrong_signature():
+    pk = Ed25519PrivateKey.generate()
+    challenge = os.urandom(32)
+    bad_sig = b"\x00" * 64
+    authorized = [pk.public_key()]
+    assert not _verify_ed25519(authorized, challenge, pk.public_key().public_bytes_raw(), bad_sig)
+
+
+def test_verify_ed25519_unauthorized_key():
+    pk = Ed25519PrivateKey.generate()
+    other = Ed25519PrivateKey.generate()
+    challenge = os.urandom(32)
+    sig = other.sign(challenge)
+    authorized = [pk.public_key()]
+    assert not _verify_ed25519(authorized, challenge, other.public_key().public_bytes_raw(), sig)
+
+
+def test_verify_ed25519_malformed_pubkey():
+    pk = Ed25519PrivateKey.generate()
+    challenge = os.urandom(32)
+    authorized = [pk.public_key()]
+    assert not _verify_ed25519(authorized, challenge, b"short", b"\x00" * 64)
+
+
+# ---------------------------------------------------------------------------
+# Ed25519 WebSocket auth: full integration tests
+# ---------------------------------------------------------------------------
+
+def _ws_connect_and_upgrade(port: int) -> tuple[socket.socket, str, bytes]:
+    """Open a raw WebSocket connection, return (sock, headers, leftover)."""
+    key = base64.b64encode(os.urandom(16)).decode("ascii")
+    sock = socket.create_connection(("127.0.0.1", port), timeout=3)
+    sock.settimeout(3)
+    req = (
+        "GET /ws HTTP/1.1\r\n"
+        f"Host: 127.0.0.1:{port}\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        f"Sec-WebSocket-Key: {key}\r\n"
+        "Sec-WebSocket-Version: 13\r\n\r\n"
+    )
+    sock.sendall(req.encode("ascii"))
+    headers, rest = _read_ws_headers(sock)
+    return sock, headers, rest
+
+
+def test_auth_challenge_response_valid_key(monkeypatch, tmp_path):
+    """Full auth flow: valid key signs the challenge and gets AUTH_OK."""
+    monkeypatch.setattr(
+        "qterminator.plugins.tmux_web_share._capture",
+        lambda session: f"{session}:OK",
+    )
+    sent_to_tmux = []
+    monkeypatch.setattr(
+        "qterminator.plugins.tmux_web_share._send_text",
+        lambda session, text: sent_to_tmux.append((session, text)),
+    )
+
+    pk = Ed25519PrivateKey.generate()
+    akfile = tmp_path / "authorized_keys"
+    akfile.write_text(_make_ssh_ed25519_line(pk) + "\n")
+
+    svc = TmuxWebShareService(
+        bind="127.0.0.1", read_only=False,
+        authorized_keys_path=str(akfile),
+    )
+    # Manually enable auth to simulate non-loopback behavior on loopback
+    svc._auth_required = True
+    svc._authorized_keys = _load_authorized_keys(str(akfile))
+    share = svc.start_share("qterm-auth")
+    # Patch the server's auth settings too
+    share.server.auth_required = True
+    share.server.authorized_keys = svc._authorized_keys
+    try:
+        sock, headers, rest = _ws_connect_and_upgrade(share.port)
+        try:
+            assert "101 Switching Protocols" in headers
+            # First message should be AUTH_CHALLENGE
+            challenge_msg = _recv_ws_text(sock, rest)
+            assert challenge_msg.startswith("AUTH_CHALLENGE ")
+            challenge_b64 = challenge_msg.split(" ", 1)[1]
+            challenge = base64.b64decode(challenge_b64)
+            assert len(challenge) == 32
+
+            # Sign the challenge
+            sig = pk.sign(challenge)
+            pubkey_b64 = base64.b64encode(
+                pk.public_key().public_bytes_raw()
+            ).decode("ascii")
+            sig_b64 = base64.b64encode(sig).decode("ascii")
+            sock.sendall(_masked_frame(f"AUTH_RESPONSE {pubkey_b64} {sig_b64}"))
+
+            # Expect AUTH_OK
+            auth_result = _recv_ws_text(sock)
+            assert auth_result == "AUTH_OK"
+
+            # Now we should get terminal output
+            screen = _recv_ws_text(sock)
+            assert screen == "qterm-auth:OK"
+
+            # Input should work (not read-only)
+            sock.sendall(_masked_frame("z"))
+            for _ in range(20):
+                if sent_to_tmux:
+                    break
+                sock.settimeout(0.1)
+                try:
+                    _recv_ws_text(sock)
+                except TimeoutError:
+                    pass
+            assert sent_to_tmux == [("qterm-auth", "z")]
+        finally:
+            sock.close()
+    finally:
+        svc.stop_all()
+
+
+def test_auth_rejects_invalid_signature(monkeypatch, tmp_path):
+    """Auth flow rejects a bad signature with AUTH_FAIL."""
+    monkeypatch.setattr(
+        "qterminator.plugins.tmux_web_share._capture",
+        lambda session: "SCREEN",
+    )
+
+    pk = Ed25519PrivateKey.generate()
+    akfile = tmp_path / "authorized_keys"
+    akfile.write_text(_make_ssh_ed25519_line(pk) + "\n")
+
+    svc = TmuxWebShareService(
+        bind="127.0.0.1", read_only=False,
+        authorized_keys_path=str(akfile),
+    )
+    svc._auth_required = True
+    svc._authorized_keys = _load_authorized_keys(str(akfile))
+    share = svc.start_share("qterm-bad")
+    share.server.auth_required = True
+    share.server.authorized_keys = svc._authorized_keys
+    try:
+        sock, headers, rest = _ws_connect_and_upgrade(share.port)
+        try:
+            challenge_msg = _recv_ws_text(sock, rest)
+            assert challenge_msg.startswith("AUTH_CHALLENGE ")
+
+            # Send a bogus signature
+            pubkey_b64 = base64.b64encode(
+                pk.public_key().public_bytes_raw()
+            ).decode("ascii")
+            bad_sig = base64.b64encode(b"\x00" * 64).decode("ascii")
+            sock.sendall(_masked_frame(f"AUTH_RESPONSE {pubkey_b64} {bad_sig}"))
+
+            auth_result = _recv_ws_text(sock)
+            assert auth_result == "AUTH_FAIL"
+        finally:
+            sock.close()
+    finally:
+        svc.stop_all()
+
+
+def test_auth_rejects_unauthorized_key(monkeypatch, tmp_path):
+    """Auth flow rejects a key not in authorized_keys."""
+    monkeypatch.setattr(
+        "qterminator.plugins.tmux_web_share._capture",
+        lambda session: "SCREEN",
+    )
+
+    authorized_pk = Ed25519PrivateKey.generate()
+    intruder_pk = Ed25519PrivateKey.generate()
+    akfile = tmp_path / "authorized_keys"
+    akfile.write_text(_make_ssh_ed25519_line(authorized_pk) + "\n")
+
+    svc = TmuxWebShareService(
+        bind="127.0.0.1", read_only=False,
+        authorized_keys_path=str(akfile),
+    )
+    svc._auth_required = True
+    svc._authorized_keys = _load_authorized_keys(str(akfile))
+    share = svc.start_share("qterm-intruder")
+    share.server.auth_required = True
+    share.server.authorized_keys = svc._authorized_keys
+    try:
+        sock, headers, rest = _ws_connect_and_upgrade(share.port)
+        try:
+            challenge_msg = _recv_ws_text(sock, rest)
+            assert challenge_msg.startswith("AUTH_CHALLENGE ")
+            challenge = base64.b64decode(challenge_msg.split(" ", 1)[1])
+
+            # Sign with the intruder's key (valid sig, but wrong key)
+            sig = intruder_pk.sign(challenge)
+            pubkey_b64 = base64.b64encode(
+                intruder_pk.public_key().public_bytes_raw()
+            ).decode("ascii")
+            sig_b64 = base64.b64encode(sig).decode("ascii")
+            sock.sendall(_masked_frame(f"AUTH_RESPONSE {pubkey_b64} {sig_b64}"))
+
+            auth_result = _recv_ws_text(sock)
+            assert auth_result == "AUTH_FAIL"
+        finally:
+            sock.close()
+    finally:
+        svc.stop_all()
+
+
+def test_loopback_share_skips_auth(monkeypatch):
+    """Loopback shares skip the auth handshake entirely."""
+    monkeypatch.setattr(
+        "qterminator.plugins.tmux_web_share._capture",
+        lambda session: f"{session}:SCREEN",
+    )
+    monkeypatch.setattr(
+        "qterminator.plugins.tmux_web_share._send_text",
+        lambda session, text: None,
+    )
+
+    svc = TmuxWebShareService(bind="127.0.0.1", read_only=False)
+    share = svc.start_share("qterm-local")
+    try:
+        sock, headers, rest = _ws_connect_and_upgrade(share.port)
+        try:
+            assert "101 Switching Protocols" in headers
+            # First message should be terminal output, NOT AUTH_CHALLENGE
+            first_msg = _recv_ws_text(sock, rest)
+            assert not first_msg.startswith("AUTH_CHALLENGE")
+            assert first_msg == "qterm-local:SCREEN"
+        finally:
+            sock.close()
+    finally:
+        svc.stop_all()
+
+
+def test_nonloopback_rw_requires_keys_file(tmp_path):
+    """Non-loopback read-write without authorized_keys file raises."""
+    with pytest.raises(RuntimeError, match="at least one Ed25519 key"):
+        TmuxWebShareService(
+            bind="0.0.0.0", read_only=False,
+            authorized_keys_path=str(tmp_path / "missing"),
+        )
+
+
+def test_nonloopback_rw_with_empty_keys_file_raises(tmp_path):
+    """Non-loopback read-write with empty authorized_keys raises."""
+    akfile = tmp_path / "authorized_keys"
+    akfile.write_text("# only comments\n\n")
+    with pytest.raises(RuntimeError, match="at least one Ed25519 key"):
+        TmuxWebShareService(
+            bind="0.0.0.0", read_only=False,
+            authorized_keys_path=str(akfile),
+        )
+
+
+def test_nonloopback_rw_with_valid_keys_succeeds(tmp_path, monkeypatch):
+    """Non-loopback read-write with authorized_keys succeeds."""
+    monkeypatch.setattr(
+        "qterminator.plugins.tmux_web_share._capture",
+        lambda session: "SCREEN",
+    )
+    pk = Ed25519PrivateKey.generate()
+    akfile = tmp_path / "authorized_keys"
+    akfile.write_text(_make_ssh_ed25519_line(pk) + "\n")
+    svc = TmuxWebShareService(
+        bind="0.0.0.0", read_only=False,
+        authorized_keys_path=str(akfile),
+    )
+    assert svc.read_only is False
+    assert svc._auth_required is True
+    share = svc.start_share("qterm-pub")
+    try:
+        assert share.read_only is False
+    finally:
+        svc.stop_all()
