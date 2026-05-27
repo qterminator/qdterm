@@ -234,6 +234,32 @@ def test_list_tabs_reports_shared_via_mosh(qtbot, rpc, window):
         del window.tmux_share
 
 
+def test_list_tabs_reports_ssh_and_web_share_ports(qtbot, rpc, window):
+    class _FakeTmuxMode:
+        def get_session_for_terminal(self, _t):
+            return "qterm-fake"
+
+    class _FakeShare:
+        def __init__(self, ports):
+            self._ports = ports
+
+        def ports_for(self, sess):
+            return self._ports if sess == "qterm-fake" else []
+
+    window.tmux_mode = _FakeTmuxMode()
+    window.tmux_ssh_share = _FakeShare([22022])
+    window.tmux_web_share = _FakeShare([7680])
+    try:
+        resp = rpc.call(qtbot, "list_tabs")
+        tab = resp["result"][0]
+        assert tab["shared_via_ssh"] == [22022]
+        assert tab["shared_via_web"] == [7680]
+    finally:
+        del window.tmux_mode
+        del window.tmux_ssh_share
+        del window.tmux_web_share
+
+
 def test_send_requires_attach(qtbot, rpc):
     tabs = rpc.call(qtbot, "list_tabs")["result"]
     tid = tabs[0]["id"]

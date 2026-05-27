@@ -267,6 +267,34 @@ def test_plugin_manager_output_watchers():
         assert isinstance(w, OutputWatcher)
 
 
+def test_plugin_manager_activates_all_classes_in_module():
+    class _Window:
+        shadow_screens = None
+
+    pm = PluginManager()
+    pm.discover()
+    assert pm.enable("output_monitors", _Window())
+    names = {
+        type(p).__name__
+        for p in pm.get_output_watchers()
+        if getattr(p, "name", "") in {
+            "error_detector",
+            "build_progress",
+            "long_command_notifier",
+            "log_level_colorizer",
+            "sensitive_data_warner",
+        }
+    }
+    assert names == {
+        "ErrorDetector",
+        "BuildProgressMonitor",
+        "LongCommandNotifier",
+        "LogLevelColorizer",
+        "SensitiveDataWarner",
+    }
+    pm.disable("output_monitors")
+
+
 def test_plugin_manager_get_by_capability_valid():
     pm = PluginManager()
     pm.discover()

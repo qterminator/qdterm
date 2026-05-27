@@ -477,6 +477,20 @@ class AgentControlPlugin(Plugin):
                     shared_via_mosh = list(tmux_share.ports_for(tmux_session))
                 except Exception:
                     shared_via_mosh = []
+            shared_via_ssh: list[int] = []
+            tmux_ssh_share = getattr(self._window, "tmux_ssh_share", None)
+            if tmux_ssh_share is not None and tmux_session:
+                try:
+                    shared_via_ssh = list(tmux_ssh_share.ports_for(tmux_session))
+                except Exception:
+                    shared_via_ssh = []
+            shared_via_web: list[int] = []
+            tmux_web_share = getattr(self._window, "tmux_web_share", None)
+            if tmux_web_share is not None and tmux_session:
+                try:
+                    shared_via_web = list(tmux_web_share.ports_for(tmux_session))
+                except Exception:
+                    shared_via_web = []
             recording = False
             recording_path = None
             recorder = getattr(self._window, "asciinema_recorder", None)
@@ -509,6 +523,8 @@ class AgentControlPlugin(Plugin):
                 "working_directory": term_widget.working_directory(),
                 "tmux_session": tmux_session,
                 "shared_via_mosh": shared_via_mosh,
+                "shared_via_ssh": shared_via_ssh,
+                "shared_via_web": shared_via_web,
                 "recording": recording,
                 "recording_path": recording_path,
                 "cwd_reported": cwd_reported,

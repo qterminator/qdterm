@@ -1432,6 +1432,51 @@ class TestBroadcastKeyForwarding:
         # But the is_read_only check in _on_terminal_key will skip it.
         assert other.is_read_only()
 
+    def test_broadcast_forwards_send_text_not_send_key_event(self, window, monkeypatch):
+        """Live QTermWidget bindings do not expose sendKeyEvent; broadcast
+        should translate keys and use TerminalWidget.send_text."""
+        from PyQt6.QtCore import Qt, QEvent
+        from PyQt6.QtGui import QKeyEvent
+
+        window._split_horizontal()
+        terms = window._tabs.widget(0).find_terminals()
+        active = window._active_terminal
+        other = [t for t in terms if t is not active][0]
+        sent = []
+        monkeypatch.setattr(other, "send_text", lambda text: sent.append(text))
+        window._set_broadcast("all")
+
+        ev = QKeyEvent(
+            QEvent.Type.KeyPress,
+            Qt.Key.Key_A,
+            Qt.KeyboardModifier.NoModifier,
+            "a",
+        )
+        window._on_terminal_key(active, ev)
+
+        assert sent == ["a"]
+
+    def test_broadcast_translates_special_key(self, window, monkeypatch):
+        from PyQt6.QtCore import Qt, QEvent
+        from PyQt6.QtGui import QKeyEvent
+
+        window._split_horizontal()
+        terms = window._tabs.widget(0).find_terminals()
+        active = window._active_terminal
+        other = [t for t in terms if t is not active][0]
+        sent = []
+        monkeypatch.setattr(other, "send_text", lambda text: sent.append(text))
+        window._set_broadcast("all")
+
+        ev = QKeyEvent(
+            QEvent.Type.KeyPress,
+            Qt.Key.Key_Up,
+            Qt.KeyboardModifier.NoModifier,
+        )
+        window._on_terminal_key(active, ev)
+
+        assert sent == ["\x1b[A"]
+
 
 # ---------------------------------------------------------------------------
 # NEW TESTS: Exit Actions

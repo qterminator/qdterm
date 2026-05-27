@@ -242,12 +242,32 @@ class ShadowScreenRegistry:
     def __init__(self):
         # id(terminal_widget) -> [ShadowScreen, refcount]
         self._shadows: dict[int, list] = {}
+        self._tmux_resolver = None
+
+    def set_tmux_resolver(self, resolver):
+        """Install a callable returning a tmux session for a terminal.
+
+        Passing ``None`` disables tmux-native snapshots. The registry keeps
+        the hook here so consumers can continue to ask for the same handle
+        API without knowing whether a terminal is tmux-backed.
+        """
+        self._tmux_resolver = resolver
 
     def acquire(self, terminal_widget) -> ShadowScreenHandle:
         tid = id(terminal_widget)
         entry = self._shadows.get(tid)
         if entry is None:
-            shadow = ShadowScreen(terminal_widget)
+            shadow = None
+            if self._tmux_resolver is not None:
+                try:
+                    session = self._tmux_resolver(terminal_widget)
+                except Exception:
+                    session = None
+                if session:
+                    from qterminator.tmux_screen import TmuxScreen
+                    shadow = TmuxScreen(terminal_widget, session)
+            if shadow is None:
+                shadow = ShadowScreen(terminal_widget)
             shadow._attach_signal()
             entry = [shadow, 0]
             self._shadows[tid] = entry

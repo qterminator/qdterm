@@ -13,6 +13,58 @@ from qterminator.config import Config
 from qterminator.translation import _ as tr
 
 
+_QT_KEY_TO_ANSI = {
+    Qt.Key.Key_Up: "\x1b[A",
+    Qt.Key.Key_Down: "\x1b[B",
+    Qt.Key.Key_Right: "\x1b[C",
+    Qt.Key.Key_Left: "\x1b[D",
+    Qt.Key.Key_Home: "\x1b[H",
+    Qt.Key.Key_End: "\x1b[F",
+    Qt.Key.Key_PageUp: "\x1b[5~",
+    Qt.Key.Key_PageDown: "\x1b[6~",
+    Qt.Key.Key_Insert: "\x1b[2~",
+    Qt.Key.Key_Delete: "\x1b[3~",
+    Qt.Key.Key_F1: "\x1bOP",
+    Qt.Key.Key_F2: "\x1bOQ",
+    Qt.Key.Key_F3: "\x1bOR",
+    Qt.Key.Key_F4: "\x1bOS",
+    Qt.Key.Key_F5: "\x1b[15~",
+    Qt.Key.Key_F6: "\x1b[17~",
+    Qt.Key.Key_F7: "\x1b[18~",
+    Qt.Key.Key_F8: "\x1b[19~",
+    Qt.Key.Key_F9: "\x1b[20~",
+    Qt.Key.Key_F10: "\x1b[21~",
+    Qt.Key.Key_F11: "\x1b[23~",
+    Qt.Key.Key_F12: "\x1b[24~",
+}
+
+
+def _qkey_to_text(event) -> "str | None":
+    """Translate a QKeyEvent into the PTY text it would produce.
+
+    Returns None for modifier-only presses that produce no terminal input.
+    """
+    text = event.text()
+    if text:
+        return text
+    key = event.key()
+    modifiers = event.modifiers()
+    if modifiers & Qt.KeyboardModifier.ControlModifier:
+        if Qt.Key.Key_A <= key <= Qt.Key.Key_Z:
+            return chr(key - Qt.Key.Key_A + 1)
+        ctrl_table = {
+            Qt.Key.Key_Space: "\x00",
+            Qt.Key.Key_BracketLeft: "\x1b",
+            Qt.Key.Key_Backslash: "\x1c",
+            Qt.Key.Key_BracketRight: "\x1d",
+            Qt.Key.Key_AsciiCircum: "\x1e",
+            Qt.Key.Key_Underscore: "\x1f",
+        }
+        if key in ctrl_table:
+            return ctrl_table[key]
+    return _QT_KEY_TO_ANSI.get(key)
+
+
 def _short_title(title):
     """Shorten a terminal title for tab display."""
     if len(title) > 30:
@@ -581,10 +633,13 @@ class MainWindow(QMainWindow):
         """Forward key events to broadcast targets."""
         if source_terminal is not self._active_terminal:
             return
+        text = _qkey_to_text(event)
+        if text is None:
+            return
         targets = self._get_broadcast_targets()
         for target in targets:
             if not target.is_read_only():
-                target.term.sendKeyEvent(event)
+                target.send_text(text)
 
     def _set_active_terminal(self, terminal):
         # Deactivate previous

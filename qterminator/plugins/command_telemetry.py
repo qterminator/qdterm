@@ -45,7 +45,9 @@ import logging
 import os
 import re
 import stat
+import subprocess
 import time
+from collections import defaultdict
 from dataclasses import dataclass
 from typing import Optional
 
@@ -74,14 +76,57 @@ class CommandTelemetry:
     process_count: int = 0
     started_at: float = 0.0
     finished_at: float = 0.0
+    read_bytes: int = 0
+    write_bytes: int = 0
+    cancelled_write_bytes: int = 0
+    binary_cpu_seconds: Optional[dict[str, float]] = None
+    process_tree_depth: int = 0
+    process_tree_breadth: int = 0
+    network_connections: Optional[list[dict]] = None
+    open_files: Optional[list[str]] = None
+    cgroups: Optional[list[str]] = None
+    syscall_counts: Optional[dict[str, int]] = None
+    oom_score_max: int = 0
+    gpu: Optional[dict] = None
 
     def to_dict(self) -> dict:
-        return {
+        out = {
             "duration": round(self.duration, 3),
             "cpu_seconds": round(self.cpu_seconds, 3),
             "peak_rss_bytes": self.peak_rss_bytes,
             "process_count": self.process_count,
         }
+        if self.read_bytes or self.write_bytes or self.cancelled_write_bytes:
+            out["read_bytes"] = self.read_bytes
+            out["write_bytes"] = self.write_bytes
+            out["cancelled_write_bytes"] = self.cancelled_write_bytes
+        if self.binary_cpu_seconds:
+            out["binary_cpu_seconds"] = {
+                k: round(v, 3)
+                for k, v in sorted(
+                    self.binary_cpu_seconds.items(),
+                    key=lambda kv: kv[1],
+                    reverse=True,
+                )
+                if v > 0
+            }
+        if self.process_tree_depth:
+            out["process_tree_depth"] = self.process_tree_depth
+        if self.process_tree_breadth:
+            out["process_tree_breadth"] = self.process_tree_breadth
+        if self.network_connections:
+            out["network"] = {"connections": self.network_connections}
+        if self.open_files:
+            out["files"] = {"open": self.open_files}
+        if self.cgroups:
+            out["cgroups"] = self.cgroups
+        if self.syscall_counts:
+            out["syscalls"] = self.syscall_counts
+        if self.oom_score_max:
+            out["oom_score_max"] = self.oom_score_max
+        if self.gpu:
+            out["gpu"] = self.gpu
+        return out
 
     def format_short(self) -> str:
         """Human-readable short form for the tab title."""
@@ -91,6 +136,10 @@ class CommandTelemetry:
             parts.append(f"{mb:.0f}MB")
         if self.cpu_seconds > 0:
             parts.append(f"{self.cpu_seconds:.1f}s CPU")
+        if self.read_bytes > 0:
+            parts.append(f"{self.read_bytes / (1024 * 1024):.0f}MB read")
+        if self.write_bytes > 0:
+            parts.append(f"{self.write_bytes / (1024 * 1024):.0f}MB written")
         return " · ".join(parts)
 
 
@@ -175,6 +224,26 @@ class ProcTreeSampler:
             frontier = next_frontier
         return list(seen)
 
+    def tree_shape(self, root_pid: int) -> tuple[list[int], int, int]:
+        """Return ``(pids, max_depth, max_breadth)`` for ``root_pid``."""
+        seen = {root_pid}
+        frontier = [(root_pid, 1)]
+        max_depth = 0
+        max_breadth = 0
+        ordered: list[int] = []
+        while frontier:
+            max_breadth = max(max_breadth, len(frontier))
+            next_frontier: list[tuple[int, int]] = []
+            for pid, depth in frontier:
+                ordered.append(pid)
+                max_depth = max(max_depth, depth)
+                for child in self.read_children(pid):
+                    if child not in seen:
+                        seen.add(child)
+                        next_frontier.append((child, depth + 1))
+            frontier = next_frontier
+        return ordered, max_depth, max_breadth
+
     def read_cpu_seconds(self, pid: int) -> float:
         """utime + stime for a single PID, in seconds. 0 on any failure."""
         try:
@@ -210,6 +279,133 @@ class ProcTreeSampler:
             pass
         return 0
 
+    def read_comm(self, pid: int) -> str:
+        """Process basename from ``/proc/<pid>/comm``."""
+        try:
+            with open(f"{self.proc_root}/{pid}/comm") as f:
+                return f.read().strip() or str(pid)
+        except (FileNotFoundError, PermissionError, OSError):
+            return str(pid)
+
+    def read_io_bytes(self, pid: int) -> dict[str, int]:
+        """I/O byte counters from ``/proc/<pid>/io``. Missing fields are 0."""
+        out = {
+            "read_bytes": 0,
+            "write_bytes": 0,
+            "cancelled_write_bytes": 0,
+        }
+        try:
+            with open(f"{self.proc_root}/{pid}/io") as f:
+                for line in f:
+                    key, sep, value = line.partition(":")
+                    if sep and key in out:
+                        try:
+                            out[key] = int(value.strip())
+                        except ValueError:
+                            pass
+        except (FileNotFoundError, PermissionError, OSError):
+            pass
+        return out
+
+    def read_cgroup(self, pid: int) -> list[str]:
+        try:
+            with open(f"{self.proc_root}/{pid}/cgroup") as f:
+                return [line.strip() for line in f if line.strip()]
+        except (FileNotFoundError, PermissionError, OSError):
+            return []
+
+    def read_oom_score(self, pid: int) -> int:
+        try:
+            with open(f"{self.proc_root}/{pid}/oom_score") as f:
+                return int(f.read().strip() or 0)
+        except (FileNotFoundError, PermissionError, ValueError, OSError):
+            return 0
+
+    def read_syscall(self, pid: int) -> str:
+        try:
+            with open(f"{self.proc_root}/{pid}/syscall") as f:
+                first = f.read().split(maxsplit=1)[0]
+        except (FileNotFoundError, PermissionError, OSError, IndexError):
+            return ""
+        return first if first and first != "-1" else ""
+
+    def read_open_files(self, pid: int, limit: int = 100) -> list[str]:
+        fd_dir = f"{self.proc_root}/{pid}/fd"
+        out: list[str] = []
+        try:
+            entries = os.listdir(fd_dir)
+        except (FileNotFoundError, PermissionError, OSError):
+            return out
+        for entry in entries:
+            if len(out) >= limit:
+                break
+            try:
+                target = os.readlink(os.path.join(fd_dir, entry))
+            except (FileNotFoundError, PermissionError, OSError):
+                continue
+            if target and not target.startswith(("socket:", "pipe:", "anon_inode:")):
+                out.append(target)
+        return out
+
+    def read_network_connections(self, pid: int) -> list[dict]:
+        conns: list[dict] = []
+        for name, family in (("tcp", 4), ("tcp6", 6), ("udp", 4), ("udp6", 6)):
+            path = f"{self.proc_root}/{pid}/net/{name}"
+            try:
+                with open(path) as f:
+                    lines = f.readlines()[1:]
+            except (FileNotFoundError, PermissionError, OSError):
+                continue
+            for line in lines:
+                parts = line.split()
+                if len(parts) < 3:
+                    continue
+                remote = parts[2]
+                if remote.startswith("00000000:") or remote.startswith("00000000000000000000000000000000:"):
+                    continue
+                host_hex, port_hex = remote.rsplit(":", 1)
+                try:
+                    port = int(port_hex, 16)
+                except ValueError:
+                    continue
+                conns.append({"remote": host_hex, "port": port, "family": family})
+        return conns
+
+    def read_gpu_usage(self, pids: list[int]) -> dict:
+        if not pids:
+            return {}
+        try:
+            proc = subprocess.run(
+                [
+                    "nvidia-smi",
+                    "--query-compute-apps=pid,used_memory",
+                    "--format=csv,noheader,nounits",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=1,
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+            return {}
+        if proc.returncode != 0:
+            return {}
+        wanted = set(pids)
+        peak = 0
+        matched = 0
+        for line in proc.stdout.splitlines():
+            bits = [b.strip() for b in line.split(",")]
+            if len(bits) < 2:
+                continue
+            try:
+                pid = int(bits[0])
+                mem = int(bits[1])
+            except ValueError:
+                continue
+            if pid in wanted:
+                matched += 1
+                peak = max(peak, mem)
+        return {"process_count": matched, "used_memory_mb_peak": peak} if matched else {}
+
     def sample(self, root_pid: int) -> dict:
         """One-shot snapshot of the process tree rooted at ``root_pid``.
 
@@ -236,6 +432,105 @@ class ProcTreeSampler:
             "cpu_seconds": total_cpu,
             "peak_rss_bytes": total_rss,
             "process_count": max(counted, len(pids)),
+        }
+
+    def sample_extended(
+        self,
+        root_pid: int,
+        collect_io: bool = True,
+        collect_network: bool = False,
+        collect_open_files: bool = False,
+        collect_gpu: bool = False,
+        collect_cgroup: bool = False,
+        collect_syscalls: bool = False,
+        collect_oom: bool = False,
+        files_limit: int = 100,
+    ) -> dict:
+        """One-shot snapshot with cheap Tier-A process-tree details."""
+        if root_pid <= 0:
+            return {
+                "cpu_seconds": 0.0,
+                "peak_rss_bytes": 0,
+                "process_count": 0,
+                "io": {
+                    "read_bytes": 0,
+                    "write_bytes": 0,
+                    "cancelled_write_bytes": 0,
+                },
+                "per_pid_cpu": {},
+                "per_pid_comm": {},
+                "process_tree_depth": 0,
+                "process_tree_breadth": 0,
+                "network_connections": [],
+                "open_files": [],
+                "cgroups": [],
+                "syscalls": {},
+                "oom_score_max": 0,
+                "gpu": {},
+            }
+        pids, depth, breadth = self.tree_shape(root_pid)
+        total_cpu = 0.0
+        total_rss = 0
+        counted = 0
+        io = {
+            "read_bytes": 0,
+            "write_bytes": 0,
+            "cancelled_write_bytes": 0,
+        }
+        per_pid_cpu: dict[int, float] = {}
+        per_pid_comm: dict[int, str] = {}
+        network_seen = {}
+        open_files: set[str] = set()
+        cgroups: set[str] = set()
+        syscalls: dict[str, int] = defaultdict(int)
+        oom_score_max = 0
+        for pid in pids:
+            cpu = self.read_cpu_seconds(pid)
+            total_cpu += cpu
+            per_pid_cpu[pid] = cpu
+            per_pid_comm[pid] = self.read_comm(pid)
+            rss = self.read_rss_bytes(pid)
+            if rss > 0:
+                total_rss += rss
+                counted += 1
+            if collect_io:
+                pid_io = self.read_io_bytes(pid)
+                for key in io:
+                    io[key] += pid_io.get(key, 0)
+            if collect_network:
+                for conn in self.read_network_connections(pid):
+                    key = (conn.get("remote"), conn.get("port"), conn.get("family"))
+                    network_seen[key] = conn
+            if collect_open_files and len(open_files) < files_limit:
+                for path in self.read_open_files(pid, files_limit):
+                    open_files.add(path)
+                    if len(open_files) >= files_limit:
+                        break
+            if collect_cgroup:
+                cgroups.update(self.read_cgroup(pid))
+            if collect_syscalls:
+                syscall = self.read_syscall(pid)
+                if syscall:
+                    syscalls[syscall] += 1
+            if collect_oom:
+                oom_score_max = max(oom_score_max, self.read_oom_score(pid))
+        if counted == 0:
+            counted = 1 if self.read_rss_bytes(root_pid) > 0 else len(pids)
+        return {
+            "cpu_seconds": total_cpu,
+            "peak_rss_bytes": total_rss,
+            "process_count": max(counted, len(pids)),
+            "io": io,
+            "per_pid_cpu": per_pid_cpu,
+            "per_pid_comm": per_pid_comm,
+            "process_tree_depth": depth,
+            "process_tree_breadth": breadth,
+            "network_connections": list(network_seen.values()),
+            "open_files": sorted(open_files)[:files_limit],
+            "cgroups": sorted(cgroups),
+            "syscalls": dict(syscalls),
+            "oom_score_max": oom_score_max,
+            "gpu": self.read_gpu_usage(pids) if collect_gpu else {},
         }
 
 
@@ -272,8 +567,29 @@ class _TabTracker:
     """Per-terminal in-flight telemetry. One instance per tab; reused
     across commands. Holds a QTimer only while a command is running."""
 
-    def __init__(self, poll_interval_ms: int = 100):
+    def __init__(
+        self,
+        poll_interval_ms: int = 100,
+        collect_io_bytes: bool = True,
+        collect_binary_breakdown: bool = True,
+        collect_network: bool = False,
+        collect_open_files: bool = False,
+        collect_gpu: bool = False,
+        collect_cgroup: bool = False,
+        collect_syscalls: bool = False,
+        collect_oom: bool = False,
+        files_limit: int = 100,
+    ):
         self._poll_interval_ms = poll_interval_ms
+        self._collect_io_bytes = collect_io_bytes
+        self._collect_binary_breakdown = collect_binary_breakdown
+        self._collect_network = collect_network
+        self._collect_open_files = collect_open_files
+        self._collect_gpu = collect_gpu
+        self._collect_cgroup = collect_cgroup
+        self._collect_syscalls = collect_syscalls
+        self._collect_oom = collect_oom
+        self._files_limit = files_limit
         self._timer: Optional[QTimer] = None
         self._reset()
         # Most recent finalized telemetry — exposed via
@@ -287,6 +603,22 @@ class _TabTracker:
         self._cpu_last: float = 0.0
         self._peak_rss: int = 0
         self._peak_count: int = 0
+        self._io_start = {
+            "read_bytes": 0,
+            "write_bytes": 0,
+            "cancelled_write_bytes": 0,
+        }
+        self._io_last = dict(self._io_start)
+        self._prev_pid_cpu: dict[int, float] = {}
+        self._binary_cpu = defaultdict(float)
+        self._tree_depth = 0
+        self._tree_breadth = 0
+        self._network_seen = {}
+        self._open_files: set[str] = set()
+        self._cgroups: set[str] = set()
+        self._syscall_counts = defaultdict(int)
+        self._oom_score_max = 0
+        self._gpu = {}
 
     def on_start(self, terminal, started_at: float,
                  started_at_monotonic: float) -> None:
@@ -302,6 +634,8 @@ class _TabTracker:
         # Take one immediate sample so even sub-poll-interval commands
         # produce non-zero counts.
         self._sample()
+        self._io_start = dict(self._io_last)
+        self._binary_cpu = defaultdict(float)
         if self._root_pid > 0:
             self._timer = QTimer()
             self._timer.setSingleShot(False)
@@ -311,12 +645,62 @@ class _TabTracker:
     def _sample(self) -> None:
         if self._root_pid <= 0:
             return
-        snap = sample_tree(self._root_pid)
+        snap = _default_sampler.sample_extended(
+            self._root_pid,
+            collect_io=self._collect_io_bytes,
+            collect_network=self._collect_network,
+            collect_open_files=self._collect_open_files,
+            collect_gpu=self._collect_gpu,
+            collect_cgroup=self._collect_cgroup,
+            collect_syscalls=self._collect_syscalls,
+            collect_oom=self._collect_oom,
+            files_limit=self._files_limit,
+        )
         self._cpu_last = max(self._cpu_last, snap["cpu_seconds"])
         if snap["peak_rss_bytes"] > self._peak_rss:
             self._peak_rss = snap["peak_rss_bytes"]
         if snap["process_count"] > self._peak_count:
             self._peak_count = snap["process_count"]
+        self._tree_depth = max(self._tree_depth, snap.get("process_tree_depth", 0))
+        self._tree_breadth = max(self._tree_breadth, snap.get("process_tree_breadth", 0))
+        if self._collect_io_bytes:
+            io = snap.get("io", {})
+            for key in self._io_last:
+                self._io_last[key] = max(self._io_last[key], int(io.get(key, 0)))
+        if self._collect_binary_breakdown:
+            per_pid_cpu = snap.get("per_pid_cpu", {})
+            per_pid_comm = snap.get("per_pid_comm", {})
+            for pid, cpu in per_pid_cpu.items():
+                prev = self._prev_pid_cpu.get(pid)
+                delta = cpu if prev is None else max(0.0, cpu - prev)
+                if delta > 0:
+                    self._binary_cpu[per_pid_comm.get(pid, str(pid))] += delta
+            self._prev_pid_cpu = dict(per_pid_cpu)
+        if self._collect_network:
+            for conn in snap.get("network_connections", []):
+                key = (conn.get("remote"), conn.get("port"), conn.get("family"))
+                self._network_seen[key] = conn
+        if self._collect_open_files:
+            for path in snap.get("open_files", []):
+                self._open_files.add(path)
+        if self._collect_cgroup:
+            self._cgroups.update(snap.get("cgroups", []))
+        if self._collect_syscalls:
+            for syscall, count in snap.get("syscalls", {}).items():
+                self._syscall_counts[syscall] += count
+        if self._collect_oom:
+            self._oom_score_max = max(self._oom_score_max, snap.get("oom_score_max", 0))
+        if self._collect_gpu:
+            gpu = snap.get("gpu") or {}
+            if gpu:
+                self._gpu["process_count"] = max(
+                    self._gpu.get("process_count", 0),
+                    gpu.get("process_count", 0),
+                )
+                self._gpu["used_memory_mb_peak"] = max(
+                    self._gpu.get("used_memory_mb_peak", 0),
+                    gpu.get("used_memory_mb_peak", 0),
+                )
 
     def stop_timer(self) -> None:
         if self._timer is not None:
@@ -351,6 +735,22 @@ class _TabTracker:
             process_count=self._peak_count,
             started_at=self._started_at,
             finished_at=finished_at,
+            read_bytes=max(0, self._io_last["read_bytes"] - self._io_start["read_bytes"]),
+            write_bytes=max(0, self._io_last["write_bytes"] - self._io_start["write_bytes"]),
+            cancelled_write_bytes=max(
+                0,
+                self._io_last["cancelled_write_bytes"]
+                - self._io_start["cancelled_write_bytes"],
+            ),
+            binary_cpu_seconds=dict(self._binary_cpu),
+            process_tree_depth=self._tree_depth,
+            process_tree_breadth=self._tree_breadth,
+            network_connections=list(self._network_seen.values()),
+            open_files=sorted(self._open_files)[:self._files_limit],
+            cgroups=sorted(self._cgroups),
+            syscall_counts=dict(self._syscall_counts),
+            oom_score_max=self._oom_score_max,
+            gpu=dict(self._gpu),
         )
         self.last_telemetry = tele
         self._reset()
@@ -404,9 +804,27 @@ class CommandTelemetryService:
     def __init__(self, window, poll_interval_ms: int = 100,
                  display: str = "tab_status",
                  log_path: Optional[str] = None,
-                 tab_status_ms: int = 30_000):
+                 tab_status_ms: int = 30_000,
+                 collect_io_bytes: bool = True,
+                 collect_binary_breakdown: bool = True,
+                 collect_network: bool = False,
+                 collect_open_files: bool = False,
+                 collect_gpu: bool = False,
+                 collect_cgroup: bool = False,
+                 collect_syscalls: bool = False,
+                 collect_oom: bool = False,
+                 files_limit: int = 100):
         self._window = window
         self._poll_interval_ms = poll_interval_ms
+        self._collect_io_bytes = collect_io_bytes
+        self._collect_binary_breakdown = collect_binary_breakdown
+        self._collect_network = collect_network
+        self._collect_open_files = collect_open_files
+        self._collect_gpu = collect_gpu
+        self._collect_cgroup = collect_cgroup
+        self._collect_syscalls = collect_syscalls
+        self._collect_oom = collect_oom
+        self._files_limit = files_limit
         if display not in VALID_DISPLAY_MODES:
             log.warning(
                 "command_telemetry: invalid display mode %r, falling back "
@@ -479,7 +897,18 @@ class CommandTelemetryService:
         tid = id(terminal)
         tracker = self._trackers.get(tid)
         if tracker is None:
-            tracker = _TabTracker(self._poll_interval_ms)
+            tracker = _TabTracker(
+                self._poll_interval_ms,
+                collect_io_bytes=self._collect_io_bytes,
+                collect_binary_breakdown=self._collect_binary_breakdown,
+                collect_network=self._collect_network,
+                collect_open_files=self._collect_open_files,
+                collect_gpu=self._collect_gpu,
+                collect_cgroup=self._collect_cgroup,
+                collect_syscalls=self._collect_syscalls,
+                collect_oom=self._collect_oom,
+                files_limit=self._files_limit,
+            )
             self._trackers[tid] = tracker
         return tracker
 
@@ -719,6 +1148,33 @@ class CommandTelemetryPlugin(Plugin):
         tab_status_ms = int(cfg.get(
             "plugins", "command_telemetry", "tab_status_ms", default=30_000,
         ))
+        collect_io_bytes = bool(cfg.get(
+            "plugins", "command_telemetry", "collect_io_bytes", default=True,
+        ))
+        collect_binary_breakdown = bool(cfg.get(
+            "plugins", "command_telemetry", "collect_binary_breakdown", default=True,
+        ))
+        collect_network = bool(cfg.get(
+            "plugins", "command_telemetry", "collect_network", default=False,
+        ))
+        collect_open_files = bool(cfg.get(
+            "plugins", "command_telemetry", "collect_open_files", default=False,
+        ))
+        collect_gpu = bool(cfg.get(
+            "plugins", "command_telemetry", "collect_gpu", default=False,
+        ))
+        collect_cgroup = bool(cfg.get(
+            "plugins", "command_telemetry", "collect_cgroup", default=False,
+        ))
+        collect_syscalls = bool(cfg.get(
+            "plugins", "command_telemetry", "collect_syscalls", default=False,
+        ))
+        collect_oom = bool(cfg.get(
+            "plugins", "command_telemetry", "collect_oom", default=False,
+        ))
+        files_limit = int(cfg.get(
+            "plugins", "command_telemetry", "files_limit", default=100,
+        ))
 
         self._window = app_controller
         self._service = CommandTelemetryService(
@@ -727,6 +1183,15 @@ class CommandTelemetryPlugin(Plugin):
             display=display,
             log_path=log_path or None,
             tab_status_ms=tab_status_ms,
+            collect_io_bytes=collect_io_bytes,
+            collect_binary_breakdown=collect_binary_breakdown,
+            collect_network=collect_network,
+            collect_open_files=collect_open_files,
+            collect_gpu=collect_gpu,
+            collect_cgroup=collect_cgroup,
+            collect_syscalls=collect_syscalls,
+            collect_oom=collect_oom,
+            files_limit=files_limit,
         )
         if not hasattr(app_controller, "command_telemetry"):
             app_controller.command_telemetry = self._service

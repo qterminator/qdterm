@@ -184,3 +184,63 @@ def test_shutdown_drops_all_shadows(terminal):
     # explicit release should be safe.
     h1.release()
     h2.release()
+
+
+def test_registry_uses_tmux_screen_when_resolver_matches(terminal):
+    from qterminator.tmux_screen import TmuxScreen
+
+    reg = ShadowScreenRegistry()
+    reg.set_tmux_resolver(lambda _term: "qterm-1")
+    handle = reg.acquire(terminal)
+    try:
+        assert isinstance(handle.shadow, TmuxScreen)
+    finally:
+        handle.release()
+
+
+def test_tmux_screen_snapshot_uses_capture_pane(monkeypatch, terminal):
+    from qterminator.tmux_screen import TmuxScreen
+
+    class _Proc:
+        def __init__(self, stdout="", stderr="", returncode=0):
+            self.stdout = stdout
+            self.stderr = stderr
+            self.returncode = returncode
+
+    calls = []
+
+    def fake_run(argv, **_kwargs):
+        calls.append(argv)
+        if "capture-pane" in argv:
+            return _Proc(stdout="hello\nworld\n")
+        return _Proc(stdout="5,1,20,4\n")
+
+    monkeypatch.setattr("qterminator.tmux_screen.subprocess.run", fake_run)
+    screen = TmuxScreen(terminal, "qterm-1")
+    snap = screen.snapshot()
+    assert snap["source"] == "tmux"
+    assert snap["tmux_session"] == "qterm-1"
+    assert snap["cursor"] == {"x": 5, "y": 1}
+    assert snap["cols"] == 20
+    assert snap["rows"] == 4
+    assert snap["lines"][0].startswith("hello")
+    assert any("capture-pane" in call for call in calls)
+
+
+def test_tmux_screen_falls_back_to_shadow_on_tmux_error(monkeypatch, terminal):
+    from qterminator.tmux_screen import TmuxScreen
+
+    class _Proc:
+        returncode = 1
+        stdout = ""
+        stderr = "no such pane"
+
+    monkeypatch.setattr(
+        "qterminator.tmux_screen.subprocess.run",
+        lambda *a, **k: _Proc(),
+    )
+    screen = TmuxScreen(terminal, "missing")
+    screen.feed("fallback visible\r\n")
+    snap = screen.snapshot()
+    assert snap.get("source") != "tmux"
+    assert any("fallback visible" in line for line in snap["lines"])

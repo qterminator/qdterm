@@ -76,7 +76,8 @@ def fake_proc(tmp_path):
     # Fields before utime/stime are indices 0..12 (13 fields before
     # the close-paren suffix). After ") S" we need 11 fields before
     # utime (index 11) and stime (index 12) in the post-paren split.
-    def make_proc(pid, ppid, utime, stime, vmrss_kb, children_str):
+    def make_proc(pid, ppid, utime, stime, vmrss_kb, children_str,
+                  comm="test", read_bytes=0, write_bytes=0):
         d = proc / str(pid)
         d.mkdir(parents=True)
         # Build stat: "pid (comm) S ppid ... utime stime ..."
@@ -84,8 +85,20 @@ def fake_proc(tmp_path):
         # minflt cminflt majflt cmajflt utime stime ...
         # That's index 0=state 1=ppid 2=pgid ... 11=utime 12=stime
         post_paren = f"S {ppid} 0 0 0 0 0 0 0 0 0 {utime} {stime} 0 0 20 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0"
-        stat_content = f"{pid} (test) {post_paren}\n"
+        stat_content = f"{pid} ({comm}) {post_paren}\n"
         (d / "stat").write_text(stat_content)
+        (d / "comm").write_text(comm + "\n")
+        (d / "io").write_text(
+            f"read_bytes: {read_bytes}\n"
+            f"write_bytes: {write_bytes}\n"
+            "cancelled_write_bytes: 0\n"
+        )
+        (d / "cgroup").write_text("0::/user.slice/qterm-test\n")
+        (d / "oom_score").write_text(str(pid % 100) + "\n")
+        (d / "syscall").write_text("1 0 0 0\n")
+        fd = d / "fd"
+        fd.mkdir()
+        (fd / "3").symlink_to(proc / "opened.txt")
 
         status_content = (
             f"Name:\ttest\n"
@@ -100,11 +113,14 @@ def fake_proc(tmp_path):
         (task / "children").write_text(children_str + "\n")
 
     # Root (pid 100): 500 utime + 200 stime ticks, 10240 kB RSS
-    make_proc(100, 1, 500, 200, 10240, "101 102")
+    make_proc(100, 1, 500, 200, 10240, "101 102",
+              comm="bash", read_bytes=1000, write_bytes=2000)
     # Child 1 (pid 101): 100 utime + 50 stime ticks, 5120 kB RSS
-    make_proc(101, 100, 100, 50, 5120, "")
+    make_proc(101, 100, 100, 50, 5120, "",
+              comm="rustc", read_bytes=3000, write_bytes=4000)
     # Child 2 (pid 102): 30 utime + 10 stime ticks, 2048 kB RSS
-    make_proc(102, 100, 30, 10, 2048, "")
+    make_proc(102, 100, 30, 10, 2048, "",
+              comm="ld", read_bytes=5000, write_bytes=6000)
 
     return str(proc)
 
@@ -155,6 +171,34 @@ def test_proc_tree_sampler_sample_aggregates_tree(fake_proc):
     assert snap["peak_rss_bytes"] == expected_rss
     # Process count: 3 (root + 2 children)
     assert snap["process_count"] == 3
+
+
+def test_proc_tree_sampler_sample_extended_tier_a(fake_proc):
+    from qterminator.plugins.command_telemetry import ProcTreeSampler
+    sampler = ProcTreeSampler(proc_root=fake_proc)
+    snap = sampler.sample_extended(100)
+    assert snap["io"]["read_bytes"] == 9000
+    assert snap["io"]["write_bytes"] == 12000
+    assert snap["per_pid_comm"][100] == "bash"
+    assert snap["per_pid_comm"][101] == "rustc"
+    assert snap["process_tree_depth"] == 2
+    assert snap["process_tree_breadth"] == 2
+
+
+def test_proc_tree_sampler_sample_extended_opt_in_collectors(fake_proc):
+    from qterminator.plugins.command_telemetry import ProcTreeSampler
+    sampler = ProcTreeSampler(proc_root=fake_proc)
+    snap = sampler.sample_extended(
+        100,
+        collect_open_files=True,
+        collect_cgroup=True,
+        collect_syscalls=True,
+        collect_oom=True,
+    )
+    assert any(path.endswith("opened.txt") for path in snap["open_files"])
+    assert "0::/user.slice/qterm-test" in snap["cgroups"]
+    assert snap["syscalls"]["1"] == 3
+    assert snap["oom_score_max"] == 2
 
 
 def test_proc_tree_sampler_zero_pid():
@@ -229,6 +273,40 @@ def test_command_telemetry_format_short():
     assert "12.4s" in s
     assert "412MB" in s
     assert "8.1s CPU" in s
+
+
+def test_command_telemetry_to_dict_includes_extended_payload():
+    from qterminator.plugins.command_telemetry import CommandTelemetry
+
+    tele = CommandTelemetry(
+        duration=1.2,
+        cpu_seconds=0.5,
+        peak_rss_bytes=1024,
+        process_count=2,
+        read_bytes=10,
+        write_bytes=20,
+        binary_cpu_seconds={"python": 0.4},
+        process_tree_depth=2,
+        process_tree_breadth=3,
+        network_connections=[{"remote": "0100007F", "port": 443, "family": 4}],
+        open_files=["/tmp/x"],
+        cgroups=["0::/user.slice"],
+        syscall_counts={"1": 2},
+        oom_score_max=17,
+        gpu={"used_memory_mb_peak": 256},
+    )
+    out = tele.to_dict()
+    assert out["read_bytes"] == 10
+    assert out["write_bytes"] == 20
+    assert out["binary_cpu_seconds"] == {"python": 0.4}
+    assert out["process_tree_depth"] == 2
+    assert out["process_tree_breadth"] == 3
+    assert out["network"]["connections"][0]["port"] == 443
+    assert out["files"]["open"] == ["/tmp/x"]
+    assert out["cgroups"] == ["0::/user.slice"]
+    assert out["syscalls"] == {"1": 2}
+    assert out["oom_score_max"] == 17
+    assert out["gpu"]["used_memory_mb_peak"] == 256
 
 
 def test_read_children_returns_empty_for_missing_pid():

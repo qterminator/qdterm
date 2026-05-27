@@ -39,8 +39,10 @@ import re
 import shutil
 import socket
 import subprocess
+from functools import partial
 from typing import Optional
 
+from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, QApplication,
     QPlainTextEdit, QMessageBox,
@@ -108,6 +110,70 @@ class Share:
                 pass
 
 
+def _read_proc_cmdline(pid: int) -> list[str]:
+    try:
+        with open(f"/proc/{pid}/cmdline", "rb") as f:
+            raw = f.read()
+    except OSError:
+        return []
+    return [p.decode("utf-8", errors="replace") for p in raw.split(b"\0") if p]
+
+
+def _scan_mosh_server_pid(session: str, port: Optional[int] = None) -> Optional[int]:
+    """Fallback when mosh-server omits the detached-pid banner."""
+    try:
+        entries = os.listdir("/proc")
+    except OSError:
+        return None
+    for entry in entries:
+        if not entry.isdigit():
+            continue
+        pid = int(entry)
+        argv = _read_proc_cmdline(pid)
+        if not argv:
+            continue
+        if "mosh-server" not in os.path.basename(argv[0]):
+            continue
+        joined = "\0".join(argv)
+        if session not in joined:
+            continue
+        if port is not None and str(port) not in argv:
+            # Some mosh-server builds keep only the requested range in argv;
+            # treat the port check as a preference, not a hard failure.
+            pass
+        return pid
+    return None
+
+
+def _discover_running_shares(bind: str) -> dict[str, list[Share]]:
+    """Best-effort startup scan for daemonized mosh-server processes."""
+    shares: dict[str, list[Share]] = {}
+    try:
+        entries = os.listdir("/proc")
+    except OSError:
+        return shares
+    for entry in entries:
+        if not entry.isdigit():
+            continue
+        argv = _read_proc_cmdline(int(entry))
+        if not argv or "mosh-server" not in os.path.basename(argv[0]):
+            continue
+        session = None
+        for i, arg in enumerate(argv[:-2]):
+            if arg == "attach" and argv[i + 1] == "-t":
+                session = argv[i + 2]
+                break
+        if not session:
+            continue
+        share = Share(session=session, bind=bind)
+        share.server_pid = int(entry)
+        for i, arg in enumerate(argv[:-1]):
+            if arg == "-p" and argv[i + 1].isdigit():
+                share.port = int(argv[i + 1])
+        shares.setdefault(session, []).append(share)
+    return shares
+
+
 class TmuxShareService:
     """Public service exposed via ``app_controller.tmux_share``."""
 
@@ -165,8 +231,20 @@ class TmuxShareService:
         dm = _MOSH_DETACHED_RE.search(out)
         if dm:
             share.server_pid = int(dm.group(1))
+        else:
+            share.server_pid = _scan_mosh_server_pid(session, share.port)
         self._shares.setdefault(session, []).append(share)
         return share
+
+    def restore_running(self):
+        for session, shares in _discover_running_shares(self.bind).items():
+            existing = {
+                s.server_pid for s in self._shares.get(session, [])
+                if s.server_pid is not None
+            }
+            for share in shares:
+                if share.server_pid not in existing:
+                    self._shares.setdefault(session, []).append(share)
 
     def shares_for(self, session: str) -> list[Share]:
         """Active shares for a session. Prunes dead entries on access."""
@@ -191,7 +269,8 @@ class TmuxShareService:
 
 
 class _ShareDialog(QDialog):
-    def __init__(self, share: Share, public_bind: bool, parent=None):
+    def __init__(self, share: Share, public_bind: bool, show_qr: bool = False,
+                 parent=None):
         super().__init__(parent)
         self.setWindowTitle("Share Tmux Session via Mosh")
         self._share = share
@@ -216,6 +295,14 @@ class _ShareDialog(QDialog):
         self._line.setMaximumHeight(60)
         layout.addWidget(self._line)
 
+        if show_qr:
+            pixmap = self._qr_pixmap(share.connect_string)
+            if pixmap is not None:
+                qr = QLabel()
+                qr.setPixmap(pixmap)
+                qr.setToolTip("Connection QR code")
+                layout.addWidget(qr)
+
         buttons = QHBoxLayout()
         copy_btn = QPushButton("Copy")
         copy_btn.clicked.connect(self._copy)
@@ -238,6 +325,24 @@ class _ShareDialog(QDialog):
         )
         footer.setWordWrap(True)
         layout.addWidget(footer)
+
+    @staticmethod
+    def _qr_pixmap(text: str) -> Optional[QPixmap]:
+        try:
+            import qrcode
+        except ImportError:
+            return None
+        try:
+            from io import BytesIO
+            img = qrcode.make(text)
+            buf = BytesIO()
+            img.save(buf, format="PNG")
+            pixmap = QPixmap()
+            if pixmap.loadFromData(buf.getvalue(), "PNG"):
+                return pixmap.scaledToWidth(180)
+        except Exception:
+            return None
+        return None
 
     def _copy(self):
         QApplication.clipboard().setText(self._share.connect_string)
@@ -263,6 +368,7 @@ class TmuxSharePlugin(MenuProvider):
         self._window = None
         self._service: Optional[TmuxShareService] = None
         self._enabled = False
+        self._show_qr = False
 
     def activate(self, app_controller):
         self._window = app_controller
@@ -276,10 +382,15 @@ class TmuxSharePlugin(MenuProvider):
             default="60000:61000",
         )
         self._service = TmuxShareService(bind=bind, port_range=port_range)
+        self._show_qr = bool(cfg.get(
+            "plugins", "tmux_share", "show_qr", default=False,
+        ))
         # Expose for agent_control / other plugins regardless of enabled
         # state — they may want to introspect existing shares.
         if not hasattr(app_controller, "tmux_share"):
             app_controller.tmux_share = self._service
+        self._service.restore_running()
+        self._update_titlebar_indicators()
 
     def deactivate(self):
         if self._service:
@@ -291,6 +402,7 @@ class TmuxSharePlugin(MenuProvider):
             except AttributeError:
                 pass
         self._service = None
+        self._clear_titlebar_indicators()
 
     # -- menu --
 
@@ -311,9 +423,14 @@ class TmuxSharePlugin(MenuProvider):
         if ports:
             items.append((
                 f"  Stop sharing ({len(ports)} active)",
-                lambda s=sess: self._service.kill_all_for(s),
+                lambda s=sess: self._stop_sharing(s),
             ))
         return items
+
+    def _stop_sharing(self, session: str):
+        if self._service is not None:
+            self._service.kill_all_for(session)
+        self._update_titlebar_indicators()
 
     def _share_and_show(self, session: str):
         try:
@@ -324,6 +441,88 @@ class TmuxSharePlugin(MenuProvider):
         dlg = _ShareDialog(
             share,
             public_bind=(self._service.bind not in ("127.0.0.1", "::1", "localhost")),
+            show_qr=self._show_qr,
             parent=self._window,
         )
+        self._update_titlebar_indicators()
         dlg.exec()
+        self._update_titlebar_indicators()
+
+    def _terminals_for_session(self, session: str):
+        tmux_mode = getattr(self._window, "tmux_mode", None)
+        tabs = getattr(self._window, "_tabs", None)
+        if tmux_mode is None or tabs is None:
+            return []
+        out = []
+        for i in range(tabs.count()):
+            split = tabs.widget(i)
+            for terminal in split.find_terminals():
+                try:
+                    if tmux_mode.get_session_for_terminal(terminal) == session:
+                        out.append(terminal)
+                except Exception:
+                    pass
+        return out
+
+    def _update_titlebar_indicators(self):
+        if self._service is None:
+            return
+        sessions = list(self._service._shares)
+        for session in sessions:
+            count = len(self._service.shares_for(session))
+            for terminal in self._terminals_for_session(session):
+                self._set_titlebar_indicator(terminal, session, count)
+
+    def _clear_titlebar_indicators(self):
+        tabs = getattr(self._window, "_tabs", None) if self._window else None
+        if tabs is None:
+            return
+        for i in range(tabs.count()):
+            split = tabs.widget(i)
+            for terminal in split.find_terminals():
+                label = getattr(terminal._titlebar, "_tmux_share_label", None)
+                if label is not None:
+                    label.hide()
+
+    def _set_titlebar_indicator(self, terminal, session: str, count: int):
+        titlebar = getattr(terminal, "_titlebar", None)
+        if titlebar is None:
+            return
+        label = getattr(titlebar, "_tmux_share_label", None)
+        if label is None:
+            label = QLabel(titlebar)
+            label.setStyleSheet("color: #8fd19e; font-size: 10px; font-weight: bold;")
+            titlebar.layout().insertWidget(3, label)
+            titlebar._tmux_share_label = label
+        if count <= 0:
+            label.hide()
+            return
+        shares = self._service.shares_for(session) if self._service else []
+        ports = ", ".join(str(s.port or "?") for s in shares)
+        label.setText(f"M{count}")
+        label.setToolTip(f"Active mosh shares for {session}: {ports}")
+        label.mousePressEvent = partial(self._show_share_manager, session)
+        label.show()
+
+    def _show_share_manager(self, session: str, _event=None):
+        if self._service is None:
+            return
+        shares = self._service.shares_for(session)
+        if not shares:
+            QMessageBox.information(self._window, "Tmux shares", "No active shares.")
+            self._update_titlebar_indicators()
+            return
+        text = "\n".join(
+            f"pid={s.server_pid or '?'} port={s.port or '?'} {s.connect_string}"
+            for s in shares
+        )
+        msg = QMessageBox(self._window)
+        msg.setWindowTitle("Active tmux shares")
+        msg.setText(f"Session: {session}")
+        msg.setInformativeText(text)
+        stop = msg.addButton("Stop all", QMessageBox.ButtonRole.DestructiveRole)
+        msg.addButton(QMessageBox.StandardButton.Close)
+        msg.exec()
+        if msg.clickedButton() is stop:
+            self._service.kill_all_for(session)
+            self._update_titlebar_indicators()

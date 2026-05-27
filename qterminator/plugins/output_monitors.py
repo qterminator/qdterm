@@ -13,14 +13,106 @@ import subprocess
 import time
 from collections import deque
 
+from PyQt6.QtCore import QTimer
+
 from qterminator.plugin import OutputWatcher
+
+
+class _ShadowWatcher(OutputWatcher):
+    """Attach an OutputWatcher to ShadowScreenRegistry for every terminal."""
+
+    DEBOUNCE_MS = 50
+    USE_RAW_OUTPUT = False
+
+    def __init__(self):
+        super().__init__()
+        self._window = None
+        self._handles = {}
+        self._pending = set()
+        self._original_connect = None
+
+    def activate(self, app_controller):
+        self._window = app_controller
+        if getattr(app_controller, "shadow_screens", None) is None:
+            return
+        tabs = getattr(app_controller, "_tabs", None)
+        if tabs is not None:
+            for i in range(tabs.count()):
+                split = tabs.widget(i)
+                for terminal in split.find_terminals():
+                    self._attach_terminal(terminal)
+        orig = getattr(app_controller, "_connect_terminal", None)
+        if orig is not None:
+            self._original_connect = orig
+
+            def wrapped(terminal, _orig=orig, _self=self):
+                _orig(terminal)
+                _self._attach_terminal(terminal)
+            app_controller._connect_terminal = wrapped
+
+    def deactivate(self):
+        for handle, listener in list(self._handles.values()):
+            try:
+                handle.remove_listener(listener)
+            except Exception:
+                pass
+            handle.release()
+        self._handles.clear()
+        if self._original_connect is not None and self._window is not None:
+            self._window._connect_terminal = self._original_connect
+        self._original_connect = None
+        self._window = None
+
+    def _attach_terminal(self, terminal):
+        tid = id(terminal)
+        if tid in self._handles or self._window is None:
+            return
+        registry = getattr(self._window, "shadow_screens", None)
+        if registry is None:
+            return
+        handle = registry.acquire(terminal)
+
+        def listener(_seq, raw, term=terminal):
+            self._on_shadow_data(term, raw)
+
+        handle.add_listener(listener)
+        self._handles[tid] = (handle, listener)
+
+    def _on_shadow_data(self, terminal, raw):
+        if self.USE_RAW_OUTPUT:
+            self.on_output(terminal, raw.decode("utf-8", errors="replace"))
+        tid = id(terminal)
+        if tid in self._pending:
+            return
+        self._pending.add(tid)
+        QTimer.singleShot(self.DEBOUNCE_MS, lambda t=terminal: self._snapshot_fire(t))
+
+    def _snapshot_fire(self, terminal):
+        tid = id(terminal)
+        self._pending.discard(tid)
+        entry = self._handles.get(tid)
+        if entry is None:
+            return
+        handle, _listener = entry
+        try:
+            snap = handle.snapshot()
+        except Exception:
+            return
+        self.on_snapshot(terminal, snap)
+
+    def on_snapshot(self, terminal, snapshot):
+        pass
+
+
+def _snapshot_text(snapshot) -> str:
+    return "\n".join(str(line).rstrip() for line in snapshot.get("lines", []))
 
 
 # ---------------------------------------------------------------------------
 # 1. ErrorDetector
 # ---------------------------------------------------------------------------
 
-class ErrorDetector(OutputWatcher):
+class ErrorDetector(_ShadowWatcher):
     """Watches for error patterns in terminal output and flags the titlebar."""
 
     name = "error_detector"
@@ -39,30 +131,38 @@ class ErrorDetector(OutputWatcher):
         self._triggered = set()  # track terminals already flagged
 
     def on_output(self, terminal, text):
+        # Direct-call compatibility for tests and legacy plugin dispatch.
         if self._ERROR_PATTERN.search(text):
-            tid = id(terminal)
-            try:
-                titlebar = terminal._titlebar
-                titlebar.set_activity(True)
-                titlebar._activity_label.setStyleSheet(
-                    "color: #e74c3c; font-size: 10px;"  # red
-                )
-                titlebar._activity_label.setToolTip("Error detected in output")
-                # Prefix the current title with an error marker if not already
-                if tid not in self._triggered:
-                    current = titlebar._title_label.text()
-                    if not current.startswith("\u26a0 "):
-                        titlebar.set_title(f"\u26a0 {current}")
-                    self._triggered.add(tid)
-            except AttributeError:
-                pass  # terminal may not have titlebar in tests
+            self._flag_terminal(terminal)
+
+    def on_snapshot(self, terminal, snapshot):
+        if self._ERROR_PATTERN.search(_snapshot_text(snapshot)):
+            self._flag_terminal(terminal)
+
+    def _flag_terminal(self, terminal):
+        tid = id(terminal)
+        try:
+            titlebar = terminal._titlebar
+            titlebar.set_activity(True)
+            titlebar._activity_label.setStyleSheet(
+                "color: #e74c3c; font-size: 10px;"  # red
+            )
+            titlebar._activity_label.setToolTip("Error detected in output")
+            # Prefix the current title with an error marker if not already
+            if tid not in self._triggered:
+                current = titlebar._title_label.text()
+                if not current.startswith("\u26a0 "):
+                    titlebar.set_title(f"\u26a0 {current}")
+                self._triggered.add(tid)
+        except AttributeError:
+            pass  # terminal may not have titlebar in tests
 
 
 # ---------------------------------------------------------------------------
 # 2. BuildProgressMonitor
 # ---------------------------------------------------------------------------
 
-class BuildProgressMonitor(OutputWatcher):
+class BuildProgressMonitor(_ShadowWatcher):
     """Extracts build progress percentages and shows them in the titlebar."""
 
     name = "build_progress"
@@ -87,6 +187,15 @@ class BuildProgressMonitor(OutputWatcher):
         self._tracking = {}  # terminal id -> last percentage
 
     def on_output(self, terminal, text):
+        # Direct-call compatibility; activated plugin path uses snapshots.
+        self._process_text(terminal, text)
+
+    def on_snapshot(self, terminal, snapshot):
+        lines = [line.rstrip() for line in snapshot.get("lines", [])]
+        visible = "\n".join(line for line in lines if line)
+        self._process_text(terminal, visible)
+
+    def _process_text(self, terminal, text):
         tid = id(terminal)
         try:
             titlebar = terminal._titlebar
@@ -137,7 +246,7 @@ class BuildProgressMonitor(OutputWatcher):
 # 3. LongCommandNotifier
 # ---------------------------------------------------------------------------
 
-class LongCommandNotifier(OutputWatcher):
+class LongCommandNotifier(_ShadowWatcher):
     """Sends a desktop notification when a command finishes after prolonged output."""
 
     name = "long_command_notifier"
@@ -148,6 +257,7 @@ class LongCommandNotifier(OutputWatcher):
     SILENCE_THRESHOLD = 30.0  # seconds
     # Minimum bytes of output before we consider it "significant"
     MIN_OUTPUT_BYTES = 500
+    USE_RAW_OUTPUT = True
 
     def __init__(self):
         super().__init__()
@@ -206,7 +316,7 @@ class LongCommandNotifier(OutputWatcher):
 # 4. LogLevelColorizer
 # ---------------------------------------------------------------------------
 
-class LogLevelColorizer(OutputWatcher):
+class LogLevelColorizer(_ShadowWatcher):
     """Counts log levels in recent output and colors the activity indicator."""
 
     name = "log_level_colorizer"
@@ -235,11 +345,19 @@ class LogLevelColorizer(OutputWatcher):
         self._history = {}
 
     def on_output(self, terminal, text):
+        self._record_levels(terminal, text, append=True)
+
+    def on_snapshot(self, terminal, snapshot):
+        self._record_levels(terminal, _snapshot_text(snapshot), append=False)
+
+    def _record_levels(self, terminal, text, append: bool):
         tid = id(terminal)
         if tid not in self._history:
             self._history[tid] = deque(maxlen=self.WINDOW_SIZE)
 
         history = self._history[tid]
+        if not append:
+            history.clear()
 
         for match in self._LOG_PATTERN.finditer(text):
             level = match.group(1).upper()
@@ -289,7 +407,7 @@ class LogLevelColorizer(OutputWatcher):
 # 5. SensitiveDataWarner
 # ---------------------------------------------------------------------------
 
-class SensitiveDataWarner(OutputWatcher):
+class SensitiveDataWarner(_ShadowWatcher):
     """Warns when potential secrets appear in terminal output."""
 
     name = "sensitive_data_warner"
@@ -316,6 +434,12 @@ class SensitiveDataWarner(OutputWatcher):
         self._warned = set()  # terminal ids already warned
 
     def on_output(self, terminal, text):
+        self._process_text(terminal, text)
+
+    def on_snapshot(self, terminal, snapshot):
+        self._process_text(terminal, _snapshot_text(snapshot))
+
+    def _process_text(self, terminal, text):
         tid = id(terminal)
         for pattern in self._PATTERNS:
             if pattern.search(text):

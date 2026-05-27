@@ -18,6 +18,7 @@ from qterminator.config import Config
 from qterminator.plugins.tmux_share import (
     TmuxShareService, TmuxSharePlugin, Share,
     _MOSH_CONNECT_RE, _MOSH_DETACHED_RE,
+    _scan_mosh_server_pid, _discover_running_shares,
 )
 
 
@@ -112,6 +113,50 @@ def test_share_session_parses_mocked_output(monkeypatch):
     assert cmd[-3:] == ["attach", "-t", "qterm-1"]
 
 
+def test_share_session_falls_back_to_proc_pid_scan(monkeypatch):
+    svc = TmuxShareService(bind="127.0.0.1", port_range="60000:61000")
+    monkeypatch.setattr(
+        "qterminator.plugins.tmux_share._mosh_available", lambda: True,
+    )
+    monkeypatch.setattr(
+        "qterminator.plugins.tmux_share._scan_mosh_server_pid",
+        lambda session, port=None: 4242,
+    )
+    monkeypatch.setattr(
+        subprocess, "run",
+        lambda *a, **k: _FakeProc(stdout=b"MOSH CONNECT 60042 SOMEKEY123\n"),
+    )
+
+    share = svc.share_session("qterm-1")
+    assert share.server_pid == 4242
+
+
+def test_scan_mosh_server_pid_from_proc(monkeypatch):
+    monkeypatch.setattr(os, "listdir", lambda path: ["1", "4242"] if path == "/proc" else [])
+    monkeypatch.setattr(
+        "qterminator.plugins.tmux_share._read_proc_cmdline",
+        lambda pid: (
+            ["mosh-server", "new", "--", "tmux", "attach", "-t", "qterm-1"]
+            if pid == 4242 else []
+        ),
+    )
+    assert _scan_mosh_server_pid("qterm-1") == 4242
+
+
+def test_discover_running_shares(monkeypatch):
+    monkeypatch.setattr(os, "listdir", lambda path: ["4242"] if path == "/proc" else [])
+    monkeypatch.setattr(
+        "qterminator.plugins.tmux_share._read_proc_cmdline",
+        lambda pid: [
+            "mosh-server", "new", "-p", "60001",
+            "--", "tmux", "attach", "-t", "qterm-1",
+        ],
+    )
+    shares = _discover_running_shares("127.0.0.1")
+    assert shares["qterm-1"][0].server_pid == 4242
+    assert shares["qterm-1"][0].port == 60001
+
+
 def test_share_session_raises_when_no_connect_line(monkeypatch):
     svc = TmuxShareService()
     monkeypatch.setattr(
@@ -196,6 +241,66 @@ def test_plugin_deactivate_removes_service():
     p.activate(w)
     p.deactivate()
     assert not hasattr(w, "tmux_share")
+
+
+def test_restore_running_merges_without_duplicates(monkeypatch):
+    svc = TmuxShareService()
+    existing = Share(session="qterm-1", bind="127.0.0.1")
+    existing.server_pid = 4242
+    existing.port = 60001
+    svc._shares["qterm-1"] = [existing]
+    restored = Share(session="qterm-1", bind="127.0.0.1")
+    restored.server_pid = 4242
+    restored.port = 60001
+    new_share = Share(session="qterm-1", bind="127.0.0.1")
+    new_share.server_pid = 5000
+    new_share.port = 60002
+    monkeypatch.setattr(
+        "qterminator.plugins.tmux_share._discover_running_shares",
+        lambda bind: {"qterm-1": [restored, new_share]},
+    )
+    svc.restore_running()
+    assert [s.server_pid for s in svc._shares["qterm-1"]] == [4242, 5000]
+
+
+def test_titlebar_indicator_shows_active_share(qtbot, monkeypatch):
+    from qterminator.window import MainWindow
+
+    win = MainWindow()
+    qtbot.addWidget(win)
+    win.show()
+    qtbot.waitExposed(win)
+
+    class _FakeTmuxMode:
+        def get_session_for_terminal(self, _terminal):
+            return "qterm-1"
+
+    plugin = TmuxSharePlugin()
+    plugin._window = win
+    plugin._service = TmuxShareService()
+    class _LiveShare(Share):
+        def is_alive(self):
+            return True
+
+        def kill(self):
+            pass
+
+    share = _LiveShare(session="qterm-1", bind="127.0.0.1")
+    share.server_pid = 4242
+    share.port = 60001
+    share.key = "KEY"
+    plugin._service._shares["qterm-1"] = [share]
+    win.tmux_mode = _FakeTmuxMode()
+    try:
+        plugin._update_titlebar_indicators()
+        label = win._active_terminal._titlebar._tmux_share_label
+        assert label.text() == "M1"
+        assert "60001" in label.toolTip()
+        assert label.isVisible()
+    finally:
+        del win.tmux_mode
+        plugin._service.kill_all()
+        win.close()
 
 
 # ---------------------------------------------------------------------------

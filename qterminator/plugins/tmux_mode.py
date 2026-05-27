@@ -224,6 +224,9 @@ class TmuxModePlugin(MenuProvider):
         # user typed `tmux` themselves).
         if not hasattr(app_controller, "tmux_mode"):
             app_controller.tmux_mode = self._service
+        registry = getattr(app_controller, "shadow_screens", None)
+        if registry is not None:
+            registry.set_tmux_resolver(self._service.get_session_for_terminal)
 
         # Install the shell provider hook only if enabled. Without this,
         # new_tab() spawns the user's $SHELL as before.
@@ -249,6 +252,9 @@ class TmuxModePlugin(MenuProvider):
                 del self._window.tmux_mode
             except AttributeError:
                 pass
+        registry = getattr(self._window, "shadow_screens", None)
+        if registry is not None:
+            registry.set_tmux_resolver(None)
 
     # -- menu items --
 

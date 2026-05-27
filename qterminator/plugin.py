@@ -92,6 +92,7 @@ class PluginManager:
     def __init__(self):
         self._available = {}  # name -> module
         self._instances = {}  # name -> Plugin instance
+        self._module_instances = {}  # name -> list[Plugin]
         self._enabled = set()
         self._config = Config()
 
@@ -160,6 +161,7 @@ class PluginManager:
         if instances:
             # Store first plugin instance as the main one
             self._instances[name] = instances[0]
+            self._module_instances[name] = instances
             # Store all instances for capability lookup
             if not hasattr(self, '_all_instances'):
                 self._all_instances = []
@@ -171,7 +173,8 @@ class PluginManager:
         """Enable a plugin."""
         instance = self.load(name)
         if instance:
-            instance.activate(app_controller)
+            for inst in self._module_instances.get(name, [instance]):
+                inst.activate(app_controller)
             self._enabled.add(name)
             return True
         return False
@@ -180,7 +183,8 @@ class PluginManager:
         """Disable a plugin."""
         instance = self._instances.get(name)
         if instance:
-            instance.deactivate()
+            for inst in reversed(self._module_instances.get(name, [instance])):
+                inst.deactivate()
             self._enabled.discard(name)
 
     def get_by_capability(self, capability):
