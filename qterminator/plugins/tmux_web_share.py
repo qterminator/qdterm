@@ -118,14 +118,16 @@ def _verify_ed25519(
         if hmac.compare_digest(ak.public_bytes_raw(), client_raw):
             matched = True
             # Do not break — iterate all keys to avoid timing side-channel
-    if not matched:
-        return False
 
+    # Always verify the signature regardless of whether the key matched,
+    # so that the timing does not leak key-membership information.
     try:
         client_key.verify(signature, challenge)
-        return True
+        sig_ok = True
     except InvalidSignature:
-        return False
+        sig_ok = False
+
+    return matched and sig_ok
 
 
 _HTML = """<!doctype html>
@@ -333,8 +335,8 @@ class _WebHandler(BaseHTTPRequestHandler):
             return False
 
         try:
-            pubkey_bytes = base64.b64decode(parts[1])
-            signature = base64.b64decode(parts[2])
+            pubkey_bytes = base64.b64decode(parts[1], validate=True)
+            signature = base64.b64decode(parts[2], validate=True)
         except Exception:
             try:
                 _ws_send_text(sock, "AUTH_FAIL")
