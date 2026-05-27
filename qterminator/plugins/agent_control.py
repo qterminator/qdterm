@@ -659,6 +659,7 @@ class AgentControlPlugin(Plugin):
         ``telemetry`` dict (i.e. commands that completed while the
         telemetry plugin was active).
         """
+        limit = max(1, min(int(limit), 1000))
         term_widget = self._get_terminal(tab_id)
         tele_svc = getattr(self._window, "command_telemetry", None)
         if tele_svc is None:

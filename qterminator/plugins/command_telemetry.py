@@ -104,10 +104,9 @@ _CLK_TCK = os.sysconf("SC_CLK_TCK") if hasattr(os, "sysconf") else 100
 class ProcTreeSampler:
     """Walk /proc to collect CPU time and RSS for a process tree.
 
-    This is a standalone, stateless utility class that encapsulates all
-    /proc parsing logic. Each method is a classmethod or staticmethod so
-    it can be used without instantiation, and the class can be subclassed
-    or monkey-patched in tests to inject synthetic /proc content.
+    Encapsulates all /proc parsing logic with a configurable ``proc_root``
+    for testability. Instantiate with a custom path to point at a fake
+    /proc tree in tests.
 
     The ``proc_root`` parameter (default ``"/proc"``) allows tests to
     point the sampler at a fake filesystem tree.
@@ -372,15 +371,14 @@ class _TelemetryLogger:
 
     def append(self, record: dict) -> None:
         line = json.dumps(record, default=str) + "\n"
-        new_file = not os.path.exists(self.path)
         try:
-            with open(self.path, "a", encoding="utf-8") as f:
-                f.write(line)
-            if new_file:
-                try:
-                    os.chmod(self.path, stat.S_IRUSR | stat.S_IWUSR)
-                except OSError:
-                    pass
+            fd = os.open(self.path,
+                         os.O_WRONLY | os.O_CREAT | os.O_APPEND,
+                         0o600)
+            try:
+                os.write(fd, line.encode("utf-8"))
+            finally:
+                os.close(fd)
         except OSError as e:
             log.warning("command_telemetry: write failed: %s", e)
 
@@ -588,18 +586,12 @@ class CommandTelemetryService:
     def _inject_inline(self, terminal, tele: CommandTelemetry) -> None:
         """Inject a dim grey telemetry line into the terminal output.
 
-        Writes directly to the PTY so the text appears in the scrollback
-        between the command's output and the next prompt. The text is
-        wrapped in ANSI dim + grey SGR and reset so it doesn't bleed
-        into subsequent output.
+        QTermWidget has no public API to write to the display layer
+        without going through the PTY master (which the shell would
+        interpret as input and try to execute). Until a display-only
+        write API is available, fall back to tab_status display.
         """
-        short = tele.format_short()
-        line = f"\r\n{_INLINE_DIM}{short}{_INLINE_RESET}\r\n"
-        try:
-            # send_text writes to the master side of the PTY.
-            terminal.send_text(line)
-        except Exception:
-            pass
+        self._show_tab_status(terminal, tele)
 
     def _fade_fire(self, terminal, timer: "QTimer") -> None:
         """Bridge slot for fade timers: clear the title and drop the
