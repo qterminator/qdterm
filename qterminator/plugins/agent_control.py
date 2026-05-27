@@ -650,6 +650,23 @@ class AgentControlPlugin(Plugin):
             "cwd_reported": shell_int.get_history(term_widget).cwd,
         }
 
+    def rpc_command_telemetry(self, _client, tab_id: int, limit: int = 10):
+        """Return the last ``limit`` command records annotated with
+        telemetry data for ``tab_id``.
+
+        Requires both ``shell_integration`` and ``command_telemetry``
+        plugins to be loaded. Returns records that have a non-null
+        ``telemetry`` dict (i.e. commands that completed while the
+        telemetry plugin was active).
+        """
+        term_widget = self._get_terminal(tab_id)
+        tele_svc = getattr(self._window, "command_telemetry", None)
+        if tele_svc is None:
+            raise _RpcError(-32008, "command_telemetry plugin not loaded")
+        return {
+            "records": tele_svc.get_telemetry_history(term_widget, limit=limit),
+        }
+
     def rpc_close_tab(self, _client, tab_id: int):
         term_widget = self._get_terminal(tab_id)
         tabs = self._window._tabs

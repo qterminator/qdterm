@@ -8,19 +8,22 @@ tree, and process count. Surfaces are:
   agent_control's ``list_tabs[].last_command.telemetry`` carries it
   for free, and the MCP ``command_history`` tool exposes it).
 * An optional ``[12.3s]`` suffix on the tab title (configurable via
-  ``display = "tab_status"`` / ``"off"``).
+  ``display = "tab_status"``), a dim grey inline line after command
+  output (``display = "inline"``), or no UI at all (``display = "off"``).
 * An optional JSONL append-log under ``~/.local/share/qterminator/``
   (configurable via ``log_path``).
 * A push event broadcast through ``agent_control.broadcast_event``
   with ``event_type == "command_finished"`` whenever ``agent_control``
   is loaded — so attached agents are notified without polling.
+* An ``rpc_command_telemetry`` method on agent_control returning the
+  last N annotated command records for a tab.
 
 Configuration (config.toml):
 
     [plugins.command_telemetry]
     enabled = false                    # default false; opt-in
     poll_interval_ms = 100             # /proc sampling cadence
-    display = "tab_status"             # "tab_status" or "off"
+    display = "tab_status"             # "tab_status", "inline", or "off"
     log_path = ""                      # empty/null = no JSONL log
 
 SECURITY NOTE: the JSONL log captures ``rec.text`` — the shell command
@@ -53,6 +56,9 @@ from qterminator.plugin import Plugin
 
 
 log = logging.getLogger("qterminator.command_telemetry")
+
+#: Valid display modes.
+VALID_DISPLAY_MODES = ("tab_status", "inline", "off")
 
 
 # ---------------------------------------------------------------------------
@@ -95,131 +101,168 @@ class CommandTelemetry:
 _CLK_TCK = os.sysconf("SC_CLK_TCK") if hasattr(os, "sysconf") else 100
 
 
-def _read_children(pid: int) -> list[int]:
-    """Return immediate child PIDs of ``pid``.
+class ProcTreeSampler:
+    """Walk /proc to collect CPU time and RSS for a process tree.
 
-    Prefers ``/proc/<pid>/task/<pid>/children`` (cheap; one read).
-    Falls back to scanning all ``/proc/*/stat`` entries for matching
-    ppid (slower but works on kernels without ``CONFIG_PROC_CHILDREN``).
+    This is a standalone, stateless utility class that encapsulates all
+    /proc parsing logic. Each method is a classmethod or staticmethod so
+    it can be used without instantiation, and the class can be subclassed
+    or monkey-patched in tests to inject synthetic /proc content.
+
+    The ``proc_root`` parameter (default ``"/proc"``) allows tests to
+    point the sampler at a fake filesystem tree.
     """
-    try:
-        with open(f"/proc/{pid}/task/{pid}/children") as f:
-            line = f.read().strip()
-        if line:
-            return [int(c) for c in line.split() if c.isdigit()]
-        return []
-    except (FileNotFoundError, PermissionError, ValueError, OSError):
-        pass
-    out: list[int] = []
-    try:
-        entries = os.listdir("/proc")
-    except OSError:
-        return out
-    for entry in entries:
-        if not entry.isdigit():
-            continue
+
+    def __init__(self, proc_root: str = "/proc"):
+        self.proc_root = proc_root
+
+    def read_children(self, pid: int) -> list[int]:
+        """Return immediate child PIDs of ``pid``.
+
+        Prefers ``/proc/<pid>/task/<pid>/children`` (cheap; one read).
+        Falls back to scanning all ``/proc/*/stat`` entries for matching
+        ppid (slower but works on kernels without ``CONFIG_PROC_CHILDREN``).
+        """
         try:
-            with open(f"/proc/{entry}/stat") as f:
+            path = f"{self.proc_root}/{pid}/task/{pid}/children"
+            with open(path) as f:
+                line = f.read().strip()
+            if line:
+                return [int(c) for c in line.split() if c.isdigit()]
+            return []
+        except (FileNotFoundError, PermissionError, ValueError, OSError):
+            pass
+        out: list[int] = []
+        try:
+            entries = os.listdir(self.proc_root)
+        except OSError:
+            return out
+        for entry in entries:
+            if not entry.isdigit():
+                continue
+            try:
+                with open(f"{self.proc_root}/{entry}/stat") as f:
+                    line = f.read()
+            except (FileNotFoundError, PermissionError, OSError):
+                continue
+            close = line.rfind(")")
+            if close == -1:
+                continue
+            fields = line[close + 2:].split()
+            if len(fields) < 2:
+                continue
+            try:
+                ppid = int(fields[1])
+            except ValueError:
+                continue
+            if ppid == pid:
+                try:
+                    out.append(int(entry))
+                except ValueError:
+                    pass
+        return out
+
+    def walk_tree(self, root_pid: int) -> list[int]:
+        """BFS over the process tree rooted at ``root_pid``."""
+        seen = {root_pid}
+        frontier = [root_pid]
+        while frontier:
+            next_frontier: list[int] = []
+            for pid in frontier:
+                for child in self.read_children(pid):
+                    if child not in seen:
+                        seen.add(child)
+                        next_frontier.append(child)
+            frontier = next_frontier
+        return list(seen)
+
+    def read_cpu_seconds(self, pid: int) -> float:
+        """utime + stime for a single PID, in seconds. 0 on any failure."""
+        try:
+            with open(f"{self.proc_root}/{pid}/stat") as f:
                 line = f.read()
         except (FileNotFoundError, PermissionError, OSError):
-            continue
+            return 0.0
         close = line.rfind(")")
         if close == -1:
-            continue
+            return 0.0
         fields = line[close + 2:].split()
-        if len(fields) < 2:
-            continue
         try:
-            ppid = int(fields[1])
-        except ValueError:
-            continue
-        if ppid == pid:
-            try:
-                out.append(int(entry))
-            except ValueError:
-                pass
-    return out
+            utime = int(fields[11])
+            stime = int(fields[12])
+        except (IndexError, ValueError):
+            return 0.0
+        return (utime + stime) / _CLK_TCK
+
+    def read_rss_bytes(self, pid: int) -> int:
+        """VmRSS for a single PID, in bytes. 0 on any failure."""
+        try:
+            with open(f"{self.proc_root}/{pid}/status") as f:
+                for line in f:
+                    if line.startswith("VmRSS:"):
+                        parts = line.split()
+                        if len(parts) >= 2:
+                            try:
+                                return int(parts[1]) * 1024
+                            except ValueError:
+                                return 0
+                        return 0
+        except (FileNotFoundError, PermissionError, OSError):
+            pass
+        return 0
+
+    def sample(self, root_pid: int) -> dict:
+        """One-shot snapshot of the process tree rooted at ``root_pid``.
+
+        Returns ``{"cpu_seconds", "peak_rss_bytes", "process_count"}``.
+        ``peak_rss_bytes`` is the SUM across the tree at this instant
+        (the caller maintains running max across samples).
+        """
+        if root_pid <= 0:
+            return {"cpu_seconds": 0.0, "peak_rss_bytes": 0, "process_count": 0}
+        pids = self.walk_tree(root_pid)
+        total_cpu = 0.0
+        total_rss = 0
+        counted = 0
+        for pid in pids:
+            cpu = self.read_cpu_seconds(pid)
+            total_cpu += cpu
+            rss = self.read_rss_bytes(pid)
+            if rss > 0:
+                total_rss += rss
+                counted += 1
+        if counted == 0:
+            counted = 1 if self.read_rss_bytes(root_pid) > 0 else len(pids)
+        return {
+            "cpu_seconds": total_cpu,
+            "peak_rss_bytes": total_rss,
+            "process_count": max(counted, len(pids)),
+        }
+
+
+# Default sampler instance pointing at the real /proc.
+_default_sampler = ProcTreeSampler()
+
+
+# Module-level convenience wrappers (backward compat + used by _TabTracker).
+def _read_children(pid: int) -> list[int]:
+    return _default_sampler.read_children(pid)
 
 
 def _walk_proc_tree(root_pid: int) -> list[int]:
-    """BFS over the process tree rooted at ``root_pid``."""
-    seen = {root_pid}
-    frontier = [root_pid]
-    while frontier:
-        next_frontier: list[int] = []
-        for pid in frontier:
-            for child in _read_children(pid):
-                if child not in seen:
-                    seen.add(child)
-                    next_frontier.append(child)
-        frontier = next_frontier
-    return list(seen)
+    return _default_sampler.walk_tree(root_pid)
 
 
 def _read_cpu_seconds(pid: int) -> float:
-    """utime + stime for a single PID, in seconds. 0 on any failure."""
-    try:
-        with open(f"/proc/{pid}/stat") as f:
-            line = f.read()
-    except (FileNotFoundError, PermissionError, OSError):
-        return 0.0
-    close = line.rfind(")")
-    if close == -1:
-        return 0.0
-    fields = line[close + 2:].split()
-    try:
-        utime = int(fields[11])
-        stime = int(fields[12])
-    except (IndexError, ValueError):
-        return 0.0
-    return (utime + stime) / _CLK_TCK
+    return _default_sampler.read_cpu_seconds(pid)
 
 
 def _read_rss_bytes(pid: int) -> int:
-    """VmRSS for a single PID, in bytes. 0 on any failure."""
-    try:
-        with open(f"/proc/{pid}/status") as f:
-            for line in f:
-                if line.startswith("VmRSS:"):
-                    parts = line.split()
-                    if len(parts) >= 2:
-                        try:
-                            return int(parts[1]) * 1024
-                        except ValueError:
-                            return 0
-                    return 0
-    except (FileNotFoundError, PermissionError, OSError):
-        pass
-    return 0
+    return _default_sampler.read_rss_bytes(pid)
 
 
 def sample_tree(root_pid: int) -> dict:
-    """One-shot snapshot of the process tree rooted at ``root_pid``.
-
-    Returns ``{"cpu_seconds", "peak_rss_bytes", "process_count"}``.
-    ``peak_rss_bytes`` is the SUM across the tree at this instant
-    (the caller maintains running max across samples).
-    """
-    if root_pid <= 0:
-        return {"cpu_seconds": 0.0, "peak_rss_bytes": 0, "process_count": 0}
-    pids = _walk_proc_tree(root_pid)
-    total_cpu = 0.0
-    total_rss = 0
-    counted = 0
-    for pid in pids:
-        cpu = _read_cpu_seconds(pid)
-        total_cpu += cpu
-        rss = _read_rss_bytes(pid)
-        if rss > 0:
-            total_rss += rss
-            counted += 1
-    if counted == 0:
-        counted = 1 if _read_rss_bytes(root_pid) > 0 else len(pids)
-    return {
-        "cpu_seconds": total_cpu,
-        "peak_rss_bytes": total_rss,
-        "process_count": max(counted, len(pids)),
-    }
+    return _default_sampler.sample(root_pid)
 
 
 # ---------------------------------------------------------------------------
@@ -350,6 +393,10 @@ class _TelemetryLogger:
 #: tab titles, so repeated commands don't compound the suffix.
 _TAB_SUFFIX_RE = re.compile(r"\s*\[[^\]]*?s(?:\s*·[^\]]*)?\]\s*$")
 
+#: ANSI SGR dim grey used by the inline display mode.
+_INLINE_DIM = "\x1b[2;37m"
+_INLINE_RESET = "\x1b[0m"
+
 
 class CommandTelemetryService:
     """Per-window service. Subscribes to shell_integration's ;C and
@@ -362,6 +409,12 @@ class CommandTelemetryService:
                  tab_status_ms: int = 30_000):
         self._window = window
         self._poll_interval_ms = poll_interval_ms
+        if display not in VALID_DISPLAY_MODES:
+            log.warning(
+                "command_telemetry: invalid display mode %r, falling back "
+                "to 'tab_status'", display,
+            )
+            display = "tab_status"
         self._display = display
         self._tab_status_ms = tab_status_ms
         self._trackers: dict[int, _TabTracker] = {}
@@ -381,6 +434,11 @@ class CommandTelemetryService:
         # ``QTimer.singleShot`` callback fires up to 30 s after the
         # window was destroyed and crashes on a deleted QTabWidget.
         self._fade_timers: list[QTimer] = []
+
+    @property
+    def display(self) -> str:
+        """Current display mode."""
+        return self._display
 
     # -- subscription wiring --
 
@@ -446,6 +504,8 @@ class CommandTelemetryService:
         # Display.
         if self._display == "tab_status":
             self._update_tab_status(terminal, tele)
+        elif self._display == "inline":
+            self._inject_inline(terminal, tele)
         # Log.
         if self._logger is not None:
             self._logger.append({
@@ -525,6 +585,22 @@ class CommandTelemetryService:
             timer.start(self._tab_status_ms)
             return
 
+    def _inject_inline(self, terminal, tele: CommandTelemetry) -> None:
+        """Inject a dim grey telemetry line into the terminal output.
+
+        Writes directly to the PTY so the text appears in the scrollback
+        between the command's output and the next prompt. The text is
+        wrapped in ANSI dim + grey SGR and reset so it doesn't bleed
+        into subsequent output.
+        """
+        short = tele.format_short()
+        line = f"\r\n{_INLINE_DIM}{short}{_INLINE_RESET}\r\n"
+        try:
+            # send_text writes to the master side of the PTY.
+            terminal.send_text(line)
+        except Exception:
+            pass
+
     def _fade_fire(self, terminal, timer: "QTimer") -> None:
         """Bridge slot for fade timers: clear the title and drop the
         timer from the pending list so ``detach`` has nothing stale
@@ -574,6 +650,36 @@ class CommandTelemetryService:
         if tracker is None or tracker.last_telemetry is None:
             return None
         return tracker.last_telemetry.to_dict()
+
+    def get_telemetry_history(self, terminal, limit: int = 10) -> list[dict]:
+        """Return the last ``limit`` annotated command records for a tab.
+
+        Delegates to shell_integration's history; only records that carry
+        a ``telemetry`` dict are included (i.e. commands that completed
+        while this plugin was active).
+        """
+        shell_int = getattr(self._window, "shell_integration", None)
+        if shell_int is None:
+            return []
+        hist = shell_int.get_history(terminal)
+        if hist is None:
+            return []
+        out = []
+        for rec in reversed(hist.history):
+            if rec.telemetry is not None:
+                entry = {
+                    "text": rec.text,
+                    "exit_status": rec.exit_status,
+                    "started_at": rec.started_at,
+                    "finished_at": rec.finished_at,
+                    "cwd": rec.cwd,
+                    "telemetry": rec.telemetry,
+                }
+                out.append(entry)
+                if len(out) >= limit:
+                    break
+        out.reverse()
+        return out
 
 
 # ---------------------------------------------------------------------------
