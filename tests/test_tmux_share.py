@@ -335,3 +335,292 @@ def test_real_mosh_server_output_is_parseable():
             os.kill(int(d.group(1)), 15)
         except OSError:
             pass
+
+
+# ---------------------------------------------------------------------------
+# _read_proc_cmdline
+# ---------------------------------------------------------------------------
+
+def test_read_proc_cmdline_returns_args_for_self():
+    """Reading our own /proc/<pid>/cmdline should return a non-empty list."""
+    from qterminator.plugins.tmux_share import _read_proc_cmdline
+    argv = _read_proc_cmdline(os.getpid())
+    assert isinstance(argv, list)
+    assert len(argv) > 0
+
+
+def test_read_proc_cmdline_returns_empty_for_missing_pid():
+    from qterminator.plugins.tmux_share import _read_proc_cmdline
+    # PID that almost certainly doesn't exist
+    result = _read_proc_cmdline(2**30)
+    assert result == []
+
+
+# ---------------------------------------------------------------------------
+# _scan_mosh_server_pid edge cases
+# ---------------------------------------------------------------------------
+
+def test_scan_mosh_server_pid_returns_none_when_no_match(monkeypatch):
+    """No mosh-server process in /proc => returns None."""
+    monkeypatch.setattr(os, "listdir", lambda path: ["1", "2"] if path == "/proc" else [])
+    monkeypatch.setattr(
+        "qterminator.plugins.tmux_share._read_proc_cmdline",
+        lambda pid: ["/bin/bash", "-c", "echo hello"],
+    )
+    assert _scan_mosh_server_pid("qterm-99") is None
+
+
+def test_scan_mosh_server_pid_ignores_non_mosh_processes(monkeypatch):
+    """Processes whose argv[0] doesn't contain 'mosh-server' are skipped."""
+    monkeypatch.setattr(os, "listdir", lambda path: ["100", "200"] if path == "/proc" else [])
+    monkeypatch.setattr(
+        "qterminator.plugins.tmux_share._read_proc_cmdline",
+        lambda pid: (
+            ["python3", "mosh-server", "attach", "-t", "qterm-1"]
+            if pid == 100
+            else ["tmux", "attach", "-t", "qterm-1"]
+        ),
+    )
+    # pid 100 has mosh-server as arg but not as argv[0] basename
+    # pid 200 doesn't have mosh-server at all
+    assert _scan_mosh_server_pid("qterm-1") is None
+
+
+# ---------------------------------------------------------------------------
+# _discover_running_shares edge cases
+# ---------------------------------------------------------------------------
+
+def test_discover_running_shares_empty_proc(monkeypatch):
+    """No entries in /proc => empty dict."""
+    monkeypatch.setattr(os, "listdir", lambda path: [] if path == "/proc" else [])
+    assert _discover_running_shares("127.0.0.1") == {}
+
+
+def test_discover_running_shares_multiple_sessions(monkeypatch):
+    """Multiple mosh-server processes for different sessions."""
+    monkeypatch.setattr(os, "listdir", lambda path: ["100", "200"] if path == "/proc" else [])
+
+    def fake_cmdline(pid):
+        if pid == 100:
+            return [
+                "mosh-server", "new", "-p", "60001",
+                "--", "tmux", "attach", "-t", "qterm-1",
+            ]
+        elif pid == 200:
+            return [
+                "mosh-server", "new", "-p", "60002",
+                "--", "tmux", "attach", "-t", "qterm-2",
+            ]
+        return []
+
+    monkeypatch.setattr(
+        "qterminator.plugins.tmux_share._read_proc_cmdline", fake_cmdline,
+    )
+    shares = _discover_running_shares("0.0.0.0")
+    assert "qterm-1" in shares
+    assert "qterm-2" in shares
+    assert shares["qterm-1"][0].server_pid == 100
+    assert shares["qterm-1"][0].port == 60001
+    assert shares["qterm-2"][0].server_pid == 200
+    assert shares["qterm-2"][0].port == 60002
+
+
+# ---------------------------------------------------------------------------
+# TmuxShareService.kill_all
+# ---------------------------------------------------------------------------
+
+def test_kill_all_stops_all_shares():
+    """kill_all() iterates all sessions and kills each share."""
+    killed = []
+
+    class _TrackingShare(Share):
+        def kill(self):
+            killed.append(self.session)
+
+    svc = TmuxShareService()
+    s1 = _TrackingShare(session="qterm-1", bind="127.0.0.1")
+    s1.server_pid = 1
+    s2 = _TrackingShare(session="qterm-2", bind="127.0.0.1")
+    s2.server_pid = 2
+    svc._shares["qterm-1"] = [s1]
+    svc._shares["qterm-2"] = [s2]
+    svc.kill_all()
+    assert set(killed) == {"qterm-1", "qterm-2"}
+    assert svc._shares == {}
+
+
+# ---------------------------------------------------------------------------
+# Share.is_alive with dead server_pid
+# ---------------------------------------------------------------------------
+
+def test_share_is_alive_with_dead_pid():
+    share = Share(session="qterm-1", bind="127.0.0.1")
+    share.server_pid = 2**30  # almost certainly not running
+    assert share.is_alive() is False
+
+
+def test_share_is_alive_with_no_pid():
+    share = Share(session="qterm-1", bind="127.0.0.1")
+    share.server_pid = None
+    assert share.is_alive() is False
+
+
+def test_share_is_alive_with_zero_pid():
+    share = Share(session="qterm-1", bind="127.0.0.1")
+    share.server_pid = 0
+    assert share.is_alive() is False
+
+
+# ---------------------------------------------------------------------------
+# Share.connect_string with various binds
+# ---------------------------------------------------------------------------
+
+def test_connect_string_with_0000_bind_uses_local_ip(monkeypatch):
+    """When bind is 0.0.0.0 the connect string should use _local_ip()."""
+    monkeypatch.setattr(
+        "qterminator.plugins.tmux_share._local_ip", lambda: "192.168.1.42",
+    )
+    share = Share(session="qterm-1", bind="0.0.0.0")
+    share.port = 60001
+    share.key = "TESTKEY"
+    s = share.connect_string
+    assert "192.168.1.42" in s
+    assert "0.0.0.0" not in s
+    assert "MOSH_KEY=TESTKEY" in s
+
+
+def test_connect_string_pending_when_no_port():
+    share = Share(session="qterm-1", bind="127.0.0.1")
+    share.key = "TESTKEY"
+    assert share.connect_string == "(pending)"
+
+
+def test_connect_string_pending_when_no_key():
+    share = Share(session="qterm-1", bind="127.0.0.1")
+    share.port = 60001
+    assert share.connect_string == "(pending)"
+
+
+# ---------------------------------------------------------------------------
+# TmuxSharePlugin.deactivate cleans up service
+# ---------------------------------------------------------------------------
+
+def test_plugin_deactivate_kills_all_shares():
+    killed = []
+
+    class _TrackingShare(Share):
+        def kill(self):
+            killed.append(self.session)
+
+    w = _FakeWindow()
+    p = TmuxSharePlugin()
+    p.activate(w)
+    s = _TrackingShare(session="qterm-1", bind="127.0.0.1")
+    s.server_pid = 1
+    p._service._shares["qterm-1"] = [s]
+    p.deactivate()
+    assert "qterm-1" in killed
+    assert not hasattr(w, "tmux_share")
+
+
+# ---------------------------------------------------------------------------
+# restore_running called on activate
+# ---------------------------------------------------------------------------
+
+def test_activate_calls_restore_running(monkeypatch):
+    called = []
+    original_restore = TmuxShareService.restore_running
+
+    def tracked_restore(self):
+        called.append(True)
+        original_restore(self)
+
+    monkeypatch.setattr(TmuxShareService, "restore_running", tracked_restore)
+    w = _FakeWindow()
+    p = TmuxSharePlugin()
+    p.activate(w)
+    assert called
+    p.deactivate()
+
+
+# ---------------------------------------------------------------------------
+# Multiple shares for same session
+# ---------------------------------------------------------------------------
+
+def test_multiple_shares_for_same_session(monkeypatch):
+    svc = TmuxShareService()
+    s1 = Share(session="qterm-1", bind="127.0.0.1")
+    s1.port = 60001
+    s1.key = "KEY1"
+    s1.server_pid = os.getpid()  # alive
+    s2 = Share(session="qterm-1", bind="127.0.0.1")
+    s2.port = 60002
+    s2.key = "KEY2"
+    s2.server_pid = os.getpid()  # alive
+    svc._shares["qterm-1"] = [s1, s2]
+    live = svc.shares_for("qterm-1")
+    assert len(live) == 2
+    assert svc.ports_for("qterm-1") == [60001, 60002]
+
+
+# ---------------------------------------------------------------------------
+# shares_for returns only live entries
+# ---------------------------------------------------------------------------
+
+def test_shares_for_returns_only_live_entries():
+    svc = TmuxShareService()
+    alive = Share(session="qterm-1", bind="127.0.0.1")
+    alive.port = 60001
+    alive.key = "KEY1"
+    alive.server_pid = os.getpid()  # alive
+
+    dead = Share(session="qterm-1", bind="127.0.0.1")
+    dead.port = 60002
+    dead.key = "KEY2"
+    dead.server_pid = 2**30  # dead
+
+    svc._shares["qterm-1"] = [alive, dead]
+    live = svc.shares_for("qterm-1")
+    assert len(live) == 1
+    assert live[0].port == 60001
+
+
+# ---------------------------------------------------------------------------
+# _ShareDialog._qr_pixmap returns None when qrcode not importable
+# ---------------------------------------------------------------------------
+
+def test_qr_pixmap_returns_none_without_qrcode(monkeypatch):
+    from qterminator.plugins.tmux_share import _ShareDialog
+    import builtins
+    real_import = builtins.__import__
+
+    def mock_import(name, *args, **kwargs):
+        if name == "qrcode":
+            raise ImportError("no qrcode")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", mock_import)
+    result = _ShareDialog._qr_pixmap("test string")
+    assert result is None
+
+
+# ---------------------------------------------------------------------------
+# discover_running_shares skips non-numeric entries
+# ---------------------------------------------------------------------------
+
+def test_discover_running_shares_skips_non_numeric_entries(monkeypatch):
+    """Non-digit entries in /proc (like 'self', 'net') are ignored."""
+    monkeypatch.setattr(
+        os, "listdir",
+        lambda path: ["self", "net", "100", "abc"] if path == "/proc" else [],
+    )
+    monkeypatch.setattr(
+        "qterminator.plugins.tmux_share._read_proc_cmdline",
+        lambda pid: [
+            "mosh-server", "new", "-p", "60001",
+            "--", "tmux", "attach", "-t", "qterm-1",
+        ] if pid == 100 else [],
+    )
+    shares = _discover_running_shares("127.0.0.1")
+    assert "qterm-1" in shares
+    assert shares["qterm-1"][0].server_pid == 100

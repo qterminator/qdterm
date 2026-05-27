@@ -1638,3 +1638,144 @@ class TestWindowGeometry:
         config = Config()
         assert config.get("general", "window_width", default=800) == 800
         assert config.get("general", "window_height", default=500) == 500
+
+
+# ---------------------------------------------------------------------------
+# NEW TESTS: Broadcast Key Translation
+# ---------------------------------------------------------------------------
+
+
+class TestBroadcastKeyTranslation:
+    """Tests for _qkey_to_text key-to-PTY-text translation."""
+
+    def test_ctrl_a_produces_soh(self):
+        """Ctrl+A produces \\x01 (SOH)."""
+        from PyQt6.QtCore import Qt, QEvent
+        from PyQt6.QtGui import QKeyEvent
+        from qterminator.window import _qkey_to_text
+
+        ev = QKeyEvent(
+            QEvent.Type.KeyPress,
+            Qt.Key.Key_A,
+            Qt.KeyboardModifier.ControlModifier,
+        )
+        assert _qkey_to_text(ev) == "\x01"
+
+    def test_ctrl_c_produces_etx(self):
+        """Ctrl+C produces \\x03 (ETX)."""
+        from PyQt6.QtCore import Qt, QEvent
+        from PyQt6.QtGui import QKeyEvent
+        from qterminator.window import _qkey_to_text
+
+        ev = QKeyEvent(
+            QEvent.Type.KeyPress,
+            Qt.Key.Key_C,
+            Qt.KeyboardModifier.ControlModifier,
+        )
+        assert _qkey_to_text(ev) == "\x03"
+
+    def test_ctrl_z_produces_sub(self):
+        """Ctrl+Z produces \\x1a (SUB)."""
+        from PyQt6.QtCore import Qt, QEvent
+        from PyQt6.QtGui import QKeyEvent
+        from qterminator.window import _qkey_to_text
+
+        ev = QKeyEvent(
+            QEvent.Type.KeyPress,
+            Qt.Key.Key_Z,
+            Qt.KeyboardModifier.ControlModifier,
+        )
+        assert _qkey_to_text(ev) == "\x1a"
+
+    def test_ctrl_bracket_left_produces_esc(self):
+        """Ctrl+[ produces \\x1b (ESC)."""
+        from PyQt6.QtCore import Qt, QEvent
+        from PyQt6.QtGui import QKeyEvent
+        from qterminator.window import _qkey_to_text
+
+        ev = QKeyEvent(
+            QEvent.Type.KeyPress,
+            Qt.Key.Key_BracketLeft,
+            Qt.KeyboardModifier.ControlModifier,
+        )
+        assert _qkey_to_text(ev) == "\x1b"
+
+    def test_f1_produces_ss3_p(self):
+        """F1 key produces \\x1bOP."""
+        from PyQt6.QtCore import Qt, QEvent
+        from PyQt6.QtGui import QKeyEvent
+        from qterminator.window import _qkey_to_text
+
+        ev = QKeyEvent(
+            QEvent.Type.KeyPress,
+            Qt.Key.Key_F1,
+            Qt.KeyboardModifier.NoModifier,
+        )
+        assert _qkey_to_text(ev) == "\x1bOP"
+
+    def test_f12_produces_csi_24_tilde(self):
+        """F12 key produces \\x1b[24~."""
+        from PyQt6.QtCore import Qt, QEvent
+        from PyQt6.QtGui import QKeyEvent
+        from qterminator.window import _qkey_to_text
+
+        ev = QKeyEvent(
+            QEvent.Type.KeyPress,
+            Qt.Key.Key_F12,
+            Qt.KeyboardModifier.NoModifier,
+        )
+        assert _qkey_to_text(ev) == "\x1b[24~"
+
+    def test_delete_produces_csi_3_tilde(self):
+        """Delete key produces \\x1b[3~."""
+        from PyQt6.QtCore import Qt, QEvent
+        from PyQt6.QtGui import QKeyEvent
+        from qterminator.window import _qkey_to_text
+
+        ev = QKeyEvent(
+            QEvent.Type.KeyPress,
+            Qt.Key.Key_Delete,
+            Qt.KeyboardModifier.NoModifier,
+        )
+        assert _qkey_to_text(ev) == "\x1b[3~"
+
+    def test_home_produces_csi_h(self):
+        """Home key produces \\x1b[H."""
+        from PyQt6.QtCore import Qt, QEvent
+        from PyQt6.QtGui import QKeyEvent
+        from qterminator.window import _qkey_to_text
+
+        ev = QKeyEvent(
+            QEvent.Type.KeyPress,
+            Qt.Key.Key_Home,
+            Qt.KeyboardModifier.NoModifier,
+        )
+        assert _qkey_to_text(ev) == "\x1b[H"
+
+    def test_modifier_only_press_produces_none(self):
+        """Modifier-only press (just Shift) produces None."""
+        from PyQt6.QtCore import Qt, QEvent
+        from PyQt6.QtGui import QKeyEvent
+        from qterminator.window import _qkey_to_text
+
+        ev = QKeyEvent(
+            QEvent.Type.KeyPress,
+            Qt.Key.Key_Shift,
+            Qt.KeyboardModifier.ShiftModifier,
+        )
+        result = _qkey_to_text(ev)
+        assert result is None
+
+    def test_tab_key_produces_tab_char(self):
+        """Tab key produces \\t."""
+        from PyQt6.QtCore import Qt, QEvent
+        from PyQt6.QtGui import QKeyEvent
+        from qterminator.window import _qkey_to_text
+
+        ev = QKeyEvent(
+            QEvent.Type.KeyPress,
+            Qt.Key.Key_Tab,
+            Qt.KeyboardModifier.NoModifier,
+            "\t",
+        )
+        assert _qkey_to_text(ev) == "\t"

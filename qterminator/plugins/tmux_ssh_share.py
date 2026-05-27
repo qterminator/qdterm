@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import getpass
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -79,9 +80,15 @@ class TmuxSSHShareService:
     def ports_for(self, session: str) -> list[int]:
         return [s.port for s in self.shares_for(session)]
 
+    _SAFE_SESSION = re.compile(r"^[a-zA-Z0-9_.\-]+$")
+
     def start_share(self, session: str, port: int = 0) -> SSHShare:
         if not self.available():
             raise RuntimeError("sshd, ssh-keygen, tmux are required for SSH sharing")
+        if not self._SAFE_SESSION.match(session):
+            raise ValueError(
+                f"tmux session name {session!r} contains unsafe characters"
+            )
         os.makedirs(os.path.dirname(self.authorized_keys), exist_ok=True)
         if not os.path.exists(self.authorized_keys):
             open(self.authorized_keys, "a").close()

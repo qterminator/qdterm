@@ -18,6 +18,50 @@ from PyQt6.QtCore import QTimer
 from qterminator.plugin import OutputWatcher
 
 
+def _install_connect_hook(app_controller, hook):
+    """Register a hook to be called for each newly connected terminal.
+
+    All _ShadowWatcher subclasses share a single wrapper around
+    _connect_terminal so that activation/deactivation order doesn't
+    matter and no wrapper chain can be corrupted.
+    """
+    hooks = getattr(app_controller, "_shadow_connect_hooks", None)
+    if hooks is None:
+        orig = getattr(app_controller, "_connect_terminal", None)
+        if orig is None:
+            return
+        hooks = []
+        app_controller._shadow_connect_hooks = hooks
+        app_controller._shadow_connect_orig = orig
+
+        def _dispatching_connect(terminal, _hooks=hooks, _orig=orig):
+            _orig(terminal)
+            for h in list(_hooks):
+                h(terminal)
+
+        app_controller._connect_terminal = _dispatching_connect
+    hooks.append(hook)
+
+
+def _remove_connect_hook(app_controller, hook):
+    hooks = getattr(app_controller, "_shadow_connect_hooks", None)
+    if hooks is None:
+        return
+    try:
+        hooks.remove(hook)
+    except ValueError:
+        pass
+    if not hooks:
+        orig = getattr(app_controller, "_shadow_connect_orig", None)
+        if orig is not None:
+            app_controller._connect_terminal = orig
+        try:
+            del app_controller._shadow_connect_hooks
+            del app_controller._shadow_connect_orig
+        except AttributeError:
+            pass
+
+
 class _ShadowWatcher(OutputWatcher):
     """Attach an OutputWatcher to ShadowScreenRegistry for every terminal."""
 
@@ -29,7 +73,6 @@ class _ShadowWatcher(OutputWatcher):
         self._window = None
         self._handles = {}
         self._pending = set()
-        self._original_connect = None
 
     def activate(self, app_controller):
         self._window = app_controller
@@ -41,14 +84,7 @@ class _ShadowWatcher(OutputWatcher):
                 split = tabs.widget(i)
                 for terminal in split.find_terminals():
                     self._attach_terminal(terminal)
-        orig = getattr(app_controller, "_connect_terminal", None)
-        if orig is not None:
-            self._original_connect = orig
-
-            def wrapped(terminal, _orig=orig, _self=self):
-                _orig(terminal)
-                _self._attach_terminal(terminal)
-            app_controller._connect_terminal = wrapped
+        _install_connect_hook(app_controller, self._attach_terminal)
 
     def deactivate(self):
         for handle, listener in list(self._handles.values()):
@@ -58,9 +94,8 @@ class _ShadowWatcher(OutputWatcher):
                 pass
             handle.release()
         self._handles.clear()
-        if self._original_connect is not None and self._window is not None:
-            self._window._connect_terminal = self._original_connect
-        self._original_connect = None
+        if self._window is not None:
+            _remove_connect_hook(self._window, self._attach_terminal)
         self._window = None
 
     def _attach_terminal(self, terminal):
@@ -122,7 +157,7 @@ class ErrorDetector(_ShadowWatcher):
 
     _ERROR_PATTERN = re.compile(
         r'\b(?:ERROR|FATAL|FAIL(?:ED|URE)?|Traceback \(most recent call last\)'
-        r'|panic:|segfault|Segmentation fault)\b',
+        r'|panic:|segfault|Segmentation fault)',
         re.IGNORECASE,
     )
 

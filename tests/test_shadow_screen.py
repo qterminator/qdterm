@@ -244,3 +244,232 @@ def test_tmux_screen_falls_back_to_shadow_on_tmux_error(monkeypatch, terminal):
     snap = screen.snapshot()
     assert snap.get("source") != "tmux"
     assert any("fallback visible" in line for line in snap["lines"])
+
+
+# ---------------------------------------------------------------------------
+# TmuxScreen caching and delegation tests
+# ---------------------------------------------------------------------------
+
+
+def test_tmux_screen_cache_returns_cached_snapshot(monkeypatch, terminal):
+    """Same seq + within cache timeout returns the cached snapshot."""
+    from qterminator.tmux_screen import TmuxScreen
+
+    class _Proc:
+        def __init__(self, stdout="", stderr="", returncode=0):
+            self.stdout = stdout
+            self.stderr = stderr
+            self.returncode = returncode
+
+    call_count = [0]
+
+    def fake_run(argv, **_kwargs):
+        call_count[0] += 1
+        if "capture-pane" in argv:
+            return _Proc(stdout="cached-line\n")
+        return _Proc(stdout="0,0,80,24\n")
+
+    monkeypatch.setattr("qterminator.tmux_screen.subprocess.run", fake_run)
+    screen = TmuxScreen(terminal, "sess-1")
+    snap1 = screen.snapshot()
+    count_after_first = call_count[0]
+    snap2 = screen.snapshot()
+    # Second call should reuse cache, so no new subprocess calls
+    assert call_count[0] == count_after_first
+    assert snap1 is snap2
+
+
+def test_tmux_screen_cache_invalidated_on_new_data(monkeypatch, terminal):
+    """Cache is invalidated when the underlying seq changes."""
+    from qterminator.tmux_screen import TmuxScreen
+
+    class _Proc:
+        def __init__(self, stdout="", stderr="", returncode=0):
+            self.stdout = stdout
+            self.stderr = stderr
+            self.returncode = returncode
+
+    call_count = [0]
+
+    def fake_run(argv, **_kwargs):
+        call_count[0] += 1
+        if "capture-pane" in argv:
+            return _Proc(stdout="line\n")
+        return _Proc(stdout="0,0,80,24\n")
+
+    monkeypatch.setattr("qterminator.tmux_screen.subprocess.run", fake_run)
+    screen = TmuxScreen(terminal, "sess-2")
+    snap1 = screen.snapshot()
+    count_after_first = call_count[0]
+    # Feed new data to change latest_seq
+    screen.feed("new data")
+    snap2 = screen.snapshot()
+    # New subprocess calls should have occurred
+    assert call_count[0] > count_after_first
+    assert snap2 is not snap1
+
+
+def test_tmux_screen_tail_delegates_to_fallback(monkeypatch, terminal):
+    """TmuxScreen.tail() delegates to the fallback ShadowScreen."""
+    from qterminator.tmux_screen import TmuxScreen
+
+    monkeypatch.setattr(
+        "qterminator.tmux_screen.subprocess.run",
+        lambda *a, **k: type("P", (), {"stdout": "", "stderr": "", "returncode": 1})(),
+    )
+    screen = TmuxScreen(terminal, "sess-3")
+    screen.feed("hello")
+    screen.feed(" world")
+    seq, data = screen.tail(0)
+    assert data == b"hello world"
+    assert seq == 2
+
+
+def test_tmux_screen_chunks_delegates_to_fallback(monkeypatch, terminal):
+    """TmuxScreen.chunks() delegates to the fallback ShadowScreen."""
+    from qterminator.tmux_screen import TmuxScreen
+
+    monkeypatch.setattr(
+        "qterminator.tmux_screen.subprocess.run",
+        lambda *a, **k: type("P", (), {"stdout": "", "stderr": "", "returncode": 1})(),
+    )
+    screen = TmuxScreen(terminal, "sess-4")
+    screen.feed("chunk1")
+    screen.feed("chunk2")
+    chunks = screen.chunks()
+    assert len(chunks) == 2
+    assert chunks[0][1] == b"chunk1"
+    assert chunks[1][1] == b"chunk2"
+
+
+def test_tmux_screen_add_remove_listener_delegates(monkeypatch, terminal):
+    """TmuxScreen.add_listener/remove_listener delegate to fallback."""
+    from qterminator.tmux_screen import TmuxScreen
+
+    monkeypatch.setattr(
+        "qterminator.tmux_screen.subprocess.run",
+        lambda *a, **k: type("P", (), {"stdout": "", "stderr": "", "returncode": 1})(),
+    )
+    screen = TmuxScreen(terminal, "sess-5")
+    events = []
+    cb = lambda seq, raw: events.append((seq, raw))
+    screen.add_listener(cb)
+    screen.feed("data")
+    assert len(events) == 1
+    assert events[0] == (1, b"data")
+    screen.remove_listener(cb)
+    screen.feed("more")
+    assert len(events) == 1  # callback was removed
+
+
+def test_tmux_screen_feed_delegates_to_fallback(monkeypatch, terminal):
+    """TmuxScreen.feed() delegates to the fallback ShadowScreen."""
+    from qterminator.tmux_screen import TmuxScreen
+
+    monkeypatch.setattr(
+        "qterminator.tmux_screen.subprocess.run",
+        lambda *a, **k: type("P", (), {"stdout": "", "stderr": "", "returncode": 1})(),
+    )
+    screen = TmuxScreen(terminal, "sess-6")
+    screen.feed("abc")
+    assert screen.latest_seq == 1
+    _, data = screen.tail(0)
+    assert data == b"abc"
+
+
+def test_registry_falls_back_when_resolver_returns_none(terminal):
+    """Registry uses ShadowScreen when resolver returns None."""
+    reg = ShadowScreenRegistry()
+    reg.set_tmux_resolver(lambda _term: None)
+    handle = reg.acquire(terminal)
+    try:
+        assert isinstance(handle.shadow, ShadowScreen)
+        assert not hasattr(handle.shadow, "_session")  # not a TmuxScreen
+    finally:
+        handle.release()
+
+
+def test_registry_falls_back_when_resolver_raises(terminal):
+    """Registry uses ShadowScreen when resolver raises an exception."""
+    reg = ShadowScreenRegistry()
+
+    def bad_resolver(_term):
+        raise RuntimeError("resolver broke")
+
+    reg.set_tmux_resolver(bad_resolver)
+    handle = reg.acquire(terminal)
+    try:
+        assert isinstance(handle.shadow, ShadowScreen)
+    finally:
+        handle.release()
+
+
+def test_tmux_screen_snapshot_empty_pane_output(monkeypatch, terminal):
+    """TmuxScreen snapshot with empty pane output still returns valid dict."""
+    from qterminator.tmux_screen import TmuxScreen
+
+    class _Proc:
+        def __init__(self, stdout="", stderr="", returncode=0):
+            self.stdout = stdout
+            self.stderr = stderr
+            self.returncode = returncode
+
+    def fake_run(argv, **_kwargs):
+        if "capture-pane" in argv:
+            return _Proc(stdout="")  # empty pane
+        return _Proc(stdout="0,0,80,24\n")
+
+    monkeypatch.setattr("qterminator.tmux_screen.subprocess.run", fake_run)
+    screen = TmuxScreen(terminal, "empty-pane")
+    snap = screen.snapshot()
+    assert snap["source"] == "tmux"
+    assert snap["cols"] == 80
+    assert snap["rows"] == 24
+    assert len(snap["lines"]) == 24
+    # All lines should be blank (padded to cols width)
+    for line in snap["lines"]:
+        assert line.strip() == ""
+
+
+def test_tmux_screen_snapshot_malformed_display_message(monkeypatch, terminal):
+    """TmuxScreen snapshot with partial/malformed display-message output."""
+    from qterminator.tmux_screen import TmuxScreen
+
+    class _Proc:
+        def __init__(self, stdout="", stderr="", returncode=0):
+            self.stdout = stdout
+            self.stderr = stderr
+            self.returncode = returncode
+
+    def fake_run(argv, **_kwargs):
+        if "capture-pane" in argv:
+            return _Proc(stdout="content\n")
+        # Malformed: only two comma-separated values instead of four
+        return _Proc(stdout="3,2\n")
+
+    monkeypatch.setattr("qterminator.tmux_screen.subprocess.run", fake_run)
+    screen = TmuxScreen(terminal, "malformed-meta")
+    snap = screen.snapshot()
+    assert snap["source"] == "tmux"
+    assert snap["cursor"]["x"] == 3
+    assert snap["cursor"]["y"] == 2
+    # cols and rows should fall back to defaults (80 and 24) for empty values
+    assert snap["cols"] == 80
+    assert snap["rows"] == 24
+
+
+def test_registry_resolver_reuses_tmux_screen_for_same_terminal(terminal):
+    """Second acquire for same terminal reuses the existing TmuxScreen."""
+    from qterminator.tmux_screen import TmuxScreen
+
+    reg = ShadowScreenRegistry()
+    reg.set_tmux_resolver(lambda _term: "shared-sess")
+    h1 = reg.acquire(terminal)
+    h2 = reg.acquire(terminal)
+    try:
+        assert isinstance(h1.shadow, TmuxScreen)
+        assert h1.shadow is h2.shadow  # same instance
+        assert reg.refcount(terminal) == 2
+    finally:
+        h1.release()
+        h2.release()

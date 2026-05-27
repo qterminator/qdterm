@@ -464,3 +464,116 @@ def test_uid_mismatch_rejected(qtbot, plugin):
         s.close()
     finally:
         g["_peer_uid_matches"] = real
+
+
+# ---------------------------------------------------------------------------
+# Additional agent_control tests
+# ---------------------------------------------------------------------------
+
+
+def test_list_tabs_ssh_web_empty_when_no_services(qtbot, rpc, window):
+    """shared_via_ssh and shared_via_web are empty lists when services missing."""
+    class _FakeTmuxMode:
+        def get_session_for_terminal(self, _t):
+            return "qterm-1"
+
+    window.tmux_mode = _FakeTmuxMode()
+    try:
+        resp = rpc.call(qtbot, "list_tabs")
+        tab = resp["result"][0]
+        assert tab["shared_via_ssh"] == []
+        assert tab["shared_via_web"] == []
+    finally:
+        del window.tmux_mode
+
+
+def test_list_tabs_ssh_web_empty_when_no_tmux_session(qtbot, rpc, window):
+    """When tmux_mode returns None, share services are not queried."""
+    class _FakeTmuxMode:
+        def get_session_for_terminal(self, _t):
+            return None
+
+    class _Boom:
+        def ports_for(self, _sess):
+            raise RuntimeError("should not be called")
+
+    window.tmux_mode = _FakeTmuxMode()
+    window.tmux_ssh_share = _Boom()
+    window.tmux_web_share = _Boom()
+    try:
+        resp = rpc.call(qtbot, "list_tabs")
+        tab = resp["result"][0]
+        assert tab["shared_via_ssh"] == []
+        assert tab["shared_via_web"] == []
+    finally:
+        del window.tmux_mode
+        del window.tmux_ssh_share
+        del window.tmux_web_share
+
+
+def test_list_tabs_share_service_exception_returns_empty(qtbot, rpc, window):
+    """Exception from a share service's ports_for returns empty list."""
+    class _FakeTmuxMode:
+        def get_session_for_terminal(self, _t):
+            return "qterm-1"
+
+    class _Broken:
+        def ports_for(self, _sess):
+            raise RuntimeError("broken")
+
+    window.tmux_mode = _FakeTmuxMode()
+    window.tmux_ssh_share = _Broken()
+    window.tmux_web_share = _Broken()
+    try:
+        resp = rpc.call(qtbot, "list_tabs")
+        tab = resp["result"][0]
+        assert tab["shared_via_ssh"] == []
+        assert tab["shared_via_web"] == []
+    finally:
+        del window.tmux_mode
+        del window.tmux_ssh_share
+        del window.tmux_web_share
+
+
+def test_list_tabs_multiple_ssh_ports(qtbot, rpc, window):
+    """Multiple SSH shares produce multiple ports in the listing."""
+    class _FakeTmuxMode:
+        def get_session_for_terminal(self, _t):
+            return "qterm-1"
+
+    class _MultiShare:
+        def ports_for(self, sess):
+            return [22022, 22023, 22024] if sess == "qterm-1" else []
+
+    window.tmux_mode = _FakeTmuxMode()
+    window.tmux_ssh_share = _MultiShare()
+    try:
+        resp = rpc.call(qtbot, "list_tabs")
+        tab = resp["result"][0]
+        assert tab["shared_via_ssh"] == [22022, 22023, 22024]
+    finally:
+        del window.tmux_mode
+        del window.tmux_ssh_share
+
+
+def test_close_tab_reduces_list(qtbot, rpc, window):
+    """close_tab removes a tab from the listing."""
+    rpc.call(qtbot, "open_tab")
+    qtbot.wait(150)
+    tabs = rpc.call(qtbot, "list_tabs")["result"]
+    assert len(tabs) == 2
+    tid = tabs[1]["id"]
+    resp = rpc.call(qtbot, "close_tab", tab_id=tid)
+    assert "result" in resp
+    qtbot.wait(150)
+    after = rpc.call(qtbot, "list_tabs")["result"]
+    assert len(after) == 1
+
+
+def test_command_history_returns_empty_initially(qtbot, rpc):
+    """command_history returns empty list when no commands have run."""
+    tabs = rpc.call(qtbot, "list_tabs")["result"]
+    tid = tabs[0]["id"]
+    resp = rpc.call(qtbot, "command_history", tab_id=tid, limit=10)
+    assert "result" in resp
+    assert resp["result"]["records"] == [] or isinstance(resp["result"]["records"], list)

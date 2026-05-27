@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import base64
 import hashlib
-import json
 import os
 import select
 import socket
@@ -75,23 +74,41 @@ def _ws_send_text(sock: socket.socket, text: str):
     sock.sendall(bytes(header) + data)
 
 
+_WS_MAX_PAYLOAD = 1_048_576  # 1 MiB — reject frames larger than this
+
+
+def _recv_exact(sock: socket.socket, n: int) -> bytes:
+    """Read exactly *n* bytes, blocking until complete or EOF."""
+    buf = bytearray()
+    while len(buf) < n:
+        chunk = sock.recv(n - len(buf))
+        if not chunk:
+            raise OSError("connection closed during recv_exact")
+        buf.extend(chunk)
+    return bytes(buf)
+
+
 def _ws_recv_text(sock: socket.socket) -> Optional[str]:
-    first = sock.recv(2)
-    if len(first) < 2:
-        return None
+    first = _recv_exact(sock, 2)
     opcode = first[0] & 0x0F
+    if opcode == 0x8:  # close
+        return None
+    if opcode == 0x9:  # ping → send pong
+        return ""
+    if opcode not in (0x1, 0x0):  # only text and continuation
+        return ""
     length = first[1] & 0x7F
     masked = bool(first[1] & 0x80)
     if length == 126:
-        length = struct.unpack("!H", sock.recv(2))[0]
+        length = struct.unpack("!H", _recv_exact(sock, 2))[0]
     elif length == 127:
-        length = struct.unpack("!Q", sock.recv(8))[0]
-    mask = sock.recv(4) if masked else b""
-    payload = sock.recv(length) if length else b""
+        length = struct.unpack("!Q", _recv_exact(sock, 8))[0]
+    if length > _WS_MAX_PAYLOAD:
+        return None
+    mask = _recv_exact(sock, 4) if masked else b""
+    payload = _recv_exact(sock, length) if length else b""
     if masked:
         payload = bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
-    if opcode == 8:
-        return None
     return payload.decode("utf-8", errors="replace")
 
 
@@ -145,7 +162,7 @@ class _WebHandler(BaseHTTPRequestHandler):
         self.send_header("Sec-WebSocket-Accept", _ws_accept(key))
         self.end_headers()
         sock = self.connection
-        sock.setblocking(False)
+        sock.setblocking(True)
         session = self.server.share.session
         read_only = self.server.share.read_only
         while not self.server.share.stopped:
@@ -156,12 +173,14 @@ class _WebHandler(BaseHTTPRequestHandler):
             ready, _, _ = select.select([sock], [], [], 0.25)
             if ready:
                 try:
+                    sock.settimeout(2.0)
                     text = _ws_recv_text(sock)
+                    sock.settimeout(None)
                 except OSError:
                     return
                 if text is None:
                     return
-                if not read_only:
+                if text and not read_only:
                     _send_text(session, text)
 
 
@@ -195,9 +214,14 @@ class _ShareHTTPServer(ThreadingHTTPServer):
         self.share = share
 
 
+_LOOPBACK_BINDS = frozenset({"127.0.0.1", "::1", "localhost"})
+
+
 class TmuxWebShareService:
-    def __init__(self, bind: str = "127.0.0.1", read_only: bool = False):
+    def __init__(self, bind: str = "127.0.0.1", read_only: bool = True):
         self.bind = bind
+        if bind not in _LOOPBACK_BINDS:
+            read_only = True
         self.read_only = read_only
         self._shares: dict[str, list[WebShare]] = {}
 
@@ -263,7 +287,7 @@ class TmuxWebSharePlugin(MenuProvider):
         cfg = Config()
         bind = cfg.get("plugins", "tmux_web_share", "bind", default="127.0.0.1")
         read_only = bool(cfg.get(
-            "plugins", "tmux_web_share", "read_only", default=False,
+            "plugins", "tmux_web_share", "read_only", default=True,
         ))
         self._service = TmuxWebShareService(bind=bind, read_only=read_only)
         if not hasattr(app_controller, "tmux_web_share"):
