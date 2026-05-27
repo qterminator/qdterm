@@ -28,10 +28,41 @@ from qterminator.plugin import MenuProvider
 _AUTHORIZED_KEYS_PATH = os.path.join(CONFIG_DIR, "authorized_keys")
 
 
+def _parse_ssh_ed25519_blob(blob: bytes) -> Optional[Ed25519PublicKey]:
+    """Validate and extract an Ed25519 public key from an SSH wire-format blob.
+
+    The expected structure is:
+        uint32(11) + "ssh-ed25519" + uint32(32) + <32-byte-key>
+    Total: 51 bytes exactly.
+    Returns None if the blob is malformed.
+    """
+    if len(blob) != 51:
+        return None
+    # Validate key-type length field
+    type_len = struct.unpack("!I", blob[0:4])[0]
+    if type_len != 11:
+        return None
+    # Validate key-type string
+    if blob[4:15] != b"ssh-ed25519":
+        return None
+    # Validate key-data length field
+    key_len = struct.unpack("!I", blob[15:19])[0]
+    if key_len != 32:
+        return None
+    try:
+        return Ed25519PublicKey.from_public_bytes(blob[19:51])
+    except Exception:
+        return None
+
+
 def _load_authorized_keys(path: str) -> list[Ed25519PublicKey]:
     """Parse an ``authorized_keys`` file and return Ed25519 public keys.
 
-    Each line should be: ``ssh-ed25519 <base64-key> [comment]``
+    Supports the standard OpenSSH format: optional leading options,
+    then ``ssh-ed25519 <base64-key> [comment]``.  Lines with options
+    like ``from="..." ssh-ed25519 AAAA... user`` are handled by
+    scanning for the ``ssh-ed25519`` token.
+
     Blank lines and lines starting with ``#`` are skipped.
     Non-Ed25519 key types are silently ignored.
     """
@@ -44,17 +75,21 @@ def _load_authorized_keys(path: str) -> list[Ed25519PublicKey]:
             if not line or line.startswith("#"):
                 continue
             parts = line.split()
-            if len(parts) < 2:
-                continue
-            if parts[0] != "ssh-ed25519":
-                continue
+            # Find the ssh-ed25519 token (may be preceded by options)
             try:
-                raw = base64.b64decode(parts[1])
-                key = Ed25519PublicKey.from_public_bytes(raw[19:51])
-                keys.append(key)
-            except Exception:
-                # Malformed key — skip
+                idx = parts.index("ssh-ed25519")
+            except ValueError:
                 continue
+            if idx + 1 >= len(parts):
+                continue
+            b64_token = parts[idx + 1]
+            try:
+                raw = base64.b64decode(b64_token, validate=True)
+            except Exception:
+                continue
+            key = _parse_ssh_ed25519_blob(raw)
+            if key is not None:
+                keys.append(key)
     return keys
 
 
@@ -75,13 +110,14 @@ def _verify_ed25519(
         return False
 
     # Check if the client's public key matches any authorized key.
-    # Compare the raw 32-byte representation for constant-time-ish matching.
+    # We iterate all keys and use hmac.compare_digest for each comparison
+    # to avoid leaking which key (if any) matched via timing.
     client_raw = client_key.public_bytes_raw()
     matched = False
     for ak in authorized_keys:
         if hmac.compare_digest(ak.public_bytes_raw(), client_raw):
             matched = True
-            break
+            # Do not break — iterate all keys to avoid timing side-channel
     if not matched:
         return False
 
@@ -257,6 +293,12 @@ class _WebHandler(BaseHTTPRequestHandler):
 
         Returns True if the client is authenticated, False otherwise.
         The caller should close the connection on False.
+
+        NOTE: This auth prevents unauthorized access but does not protect
+        against active network attackers (MITM).  For that, TLS should
+        be layered on top (e.g. via a reverse proxy).  The challenge is
+        a fresh 32-byte nonce from os.urandom, so passive replay is
+        not possible.
         """
         authorized_keys = self.server.authorized_keys
         challenge = os.urandom(32)

@@ -675,6 +675,51 @@ def test_load_authorized_keys_missing_file(tmp_path):
     assert keys == []
 
 
+def test_load_authorized_keys_with_options_prefix(tmp_path):
+    """Lines with leading options (e.g. from=...) are parsed correctly."""
+    pk = Ed25519PrivateKey.generate()
+    bare_line = _make_ssh_ed25519_line(pk, "bare")
+    # Construct a line with options before the key type
+    parts = bare_line.split()
+    options_line = f'from="10.0.0.0/8" {parts[0]} {parts[1]} with-options'
+    akfile = tmp_path / "authorized_keys"
+    akfile.write_text(f"{options_line}\n")
+    keys = _load_authorized_keys(str(akfile))
+    assert len(keys) == 1
+    assert keys[0].public_bytes_raw() == pk.public_key().public_bytes_raw()
+
+
+def test_load_authorized_keys_rejects_malformed_blob(tmp_path):
+    """Malformed base64 or wrong blob length is rejected."""
+    akfile = tmp_path / "authorized_keys"
+    akfile.write_text(
+        # truncated blob
+        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA truncated\n"
+        # invalid base64
+        "ssh-ed25519 !!!not-base64!!! bad\n"
+        # wrong key type in blob (blob says rsa but line says ed25519)
+        "ssh-ed25519 AAAAB3NzaC1yc2EAAAA= fake-rsa\n"
+    )
+    keys = _load_authorized_keys(str(akfile))
+    assert keys == []
+
+
+def test_load_authorized_keys_rejects_wrong_blob_length(tmp_path):
+    """Blob with extra trailing bytes is rejected."""
+    pk = Ed25519PrivateKey.generate()
+    raw = pk.public_key().public_bytes_raw()
+    # Build correct blob + extra byte
+    blob = (
+        struct.pack("!I", 11) + b"ssh-ed25519"
+        + struct.pack("!I", 32) + raw + b"\x00"
+    )
+    line = f"ssh-ed25519 {base64.b64encode(blob).decode()} extra-byte"
+    akfile = tmp_path / "authorized_keys"
+    akfile.write_text(line + "\n")
+    keys = _load_authorized_keys(str(akfile))
+    assert keys == []
+
+
 def test_verify_ed25519_valid_signature():
     pk = Ed25519PrivateKey.generate()
     challenge = os.urandom(32)
