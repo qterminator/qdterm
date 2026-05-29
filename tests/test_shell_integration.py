@@ -255,6 +255,18 @@ def test_subscriber_exception_swallowed():
     assert h.last is not None  # still recorded
 
 
+@pytest.mark.cheat_aware(
+    protects="typed command text is NOT captured into history unless "
+    "capture_command_text is explicitly enabled",
+    severity="high",
+    cheats=[
+        "default capture_command_text to True",
+        "weaken the assert from `is None` to a truthy/`!=` check",
+        "stop feeding the secret command between ;B and ;C",
+    ],
+    consequence="secrets typed at the prompt (passwords, tokens) would be "
+    "recorded in command history that agents/RPC can read",
+)
 def test_capture_command_text_off_by_default():
     h = CommandHistory()
     p = OSCParser(h, capture_command_text=False)
@@ -282,6 +294,18 @@ def test_history_limit_truncates_oldest():
     assert len(h.history) == 3
 
 
+@pytest.mark.cheat_aware(
+    protects="the OSC parser's carry buffer stays bounded under a flood of "
+    "unterminated escape bytes",
+    severity="high",
+    cheats=[
+        "raise or remove MAX_CARRY so the bound is never hit",
+        "shrink `big` below MAX_CARRY so the overflow path is untested",
+        "loosen `<=` to a comparison that always holds",
+    ],
+    consequence="malicious terminal output (bare ESC flood) could grow the "
+    "parser buffer without limit, an unbounded-memory DoS",
+)
 def test_carry_buffer_bounded_under_garbage():
     """A stream of bare ESC bytes must not grow the carry buffer
     unboundedly — we should drop the head."""

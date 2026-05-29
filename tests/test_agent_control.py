@@ -260,6 +260,18 @@ def test_list_tabs_reports_ssh_and_web_share_ports(qtbot, rpc, window):
         del window.tmux_web_share
 
 
+@pytest.mark.cheat_aware(
+    protects="send_text into a terminal is refused unless the client first "
+    "attached to that tab",
+    severity="high",
+    cheats=[
+        "assert success instead of the -32001 error",
+        "loosen the error-code check so any response passes",
+        "pre-attach in a fixture so the gate is never exercised",
+    ],
+    consequence="an unattached RPC client could inject keystrokes/commands "
+    "into a terminal it never opened a session on",
+)
 def test_send_requires_attach(qtbot, rpc):
     tabs = rpc.call(qtbot, "list_tabs")["result"]
     tid = tabs[0]["id"]
@@ -438,6 +450,18 @@ def test_broadcast_event_drops_envelope_collisions(qtbot, rpc, plugin):
     assert msg["rule_id"] == "ok"
 
 
+@pytest.mark.cheat_aware(
+    protects="the agent-control Unix socket rejects and closes connections "
+    "whose peer uid does not match the owner",
+    severity="critical",
+    cheats=[
+        "assert the connection stays open instead of being closed",
+        "stop forcing _peer_uid_matches False so the deny path never runs",
+        "swallow the BrokenPipe/reset into a pass",
+    ],
+    consequence="any local user could connect to another user's control "
+    "socket and drive their terminals (send input, read screen, screenshot)",
+)
 def test_uid_mismatch_rejected(qtbot, plugin):
     # The plugin is loaded via importlib.util.spec_from_file_location, so
     # its module globals are a *separate* dict from the import-system's
