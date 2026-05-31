@@ -311,6 +311,35 @@ def test_plugin_manager_get_by_capability_no_match():
     assert results == []
 
 
+def test_plugin_manager_identifies_user_plugins(tmp_path, monkeypatch, fresh_config):
+    from qterminator import plugin as plugin_mod
+
+    user_dir = tmp_path / "plugins"
+    user_dir.mkdir()
+    (user_dir / "userplug.py").write_text(
+        "from qterminator.plugin import Plugin\n"
+        "class UserPlug(Plugin):\n"
+        "    name = 'userplug'\n",
+        encoding="utf-8",
+    )
+    original_dirs = plugin_mod.PLUGIN_DIRS
+    plugin_mod.PLUGIN_DIRS = [
+        os.path.join(os.path.dirname(plugin_mod.__file__), "plugins"),
+        str(user_dir),
+    ]
+    try:
+        pm = PluginManager()
+        pm.discover()
+        assert pm.is_builtin("url_handlers") is True
+        assert pm.is_builtin("userplug") is False
+        assert pm.is_enabled_by_config("userplug") is False
+        cfg = Config()
+        cfg.set("plugins", "userplug", "enabled", True)
+        assert pm.is_enabled_by_config("userplug") is True
+    finally:
+        plugin_mod.PLUGIN_DIRS = original_dirs
+
+
 # ---------------------------------------------------------------------------
 # URL Handlers (url_handlers.py)
 # ---------------------------------------------------------------------------

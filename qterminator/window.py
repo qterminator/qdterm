@@ -436,6 +436,9 @@ class MainWindow(QMainWindow):
                 seen.add(name)
 
         for name in ordered:
+            if (not self._plugin_manager.is_builtin(name)
+                    and not self._plugin_manager.is_enabled_by_config(name)):
+                continue
             self._plugin_manager.enable(name, self)
 
     def _setup_shortcuts(self):

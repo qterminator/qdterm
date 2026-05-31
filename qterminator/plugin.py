@@ -112,6 +112,21 @@ class PluginManager:
         """Return dict of name -> file path for discovered plugins."""
         return dict(self._available)
 
+    def is_builtin(self, name):
+        """Return True when ``name`` resolves inside the bundled plugin dir."""
+        path = self._available.get(name)
+        if not path:
+            return False
+        builtin_dir = os.path.realpath(os.path.join(os.path.dirname(__file__), "plugins"))
+        try:
+            return os.path.commonpath([builtin_dir, os.path.realpath(path)]) == builtin_dir
+        except ValueError:
+            return False
+
+    def is_enabled_by_config(self, name):
+        """User plugins require explicit config opt-in before auto-activation."""
+        return self._config.get("plugins", name, "enabled", default=None) is True
+
     def enabled_plugins(self):
         """Return set of enabled plugin names."""
         return set(self._enabled)
@@ -125,7 +140,10 @@ class PluginManager:
         if not path:
             return None
 
-        full_name = f"qterminator.plugins.{name}"
+        if self.is_builtin(name):
+            full_name = f"qterminator.plugins.{name}"
+        else:
+            full_name = f"qterminator.user_plugins.{name}"
         # If a built-in plugin has already been imported through the
         # regular import system (e.g. by a test file or by another
         # plugin doing ``from qterminator.plugins.x import …``), reuse
