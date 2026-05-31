@@ -3,6 +3,7 @@
 import pytest
 from PyQt6.QtCore import Qt
 from PyQt6.QtTest import QTest
+from PyQt6.QtWidgets import QLabel, QToolButton
 
 from qterminator.titlebar import TerminalTitlebar, GROUP_COLORS, TITLE_HEIGHT, ACTIVE_BG, INACTIVE_BG
 
@@ -278,3 +279,82 @@ def test_group_indicator_fixed_size(titlebar):
     assert titlebar._group_label.maximumWidth() == 12
     assert titlebar._group_label.minimumHeight() == 12
     assert titlebar._group_label.maximumHeight() == 12
+
+
+# --- Extension widgets ---
+
+def test_add_titlebar_widget_right_inserts_before_close(titlebar):
+    """Extra right-side widgets appear before the close button."""
+    label = QLabel("VM")
+    returned = titlebar.add_titlebar_widget("vm", label)
+
+    assert returned is label
+    assert titlebar.titlebar_widget("vm") is label
+    assert titlebar.layout().indexOf(label) < titlebar.layout().indexOf(titlebar._close_btn)
+
+
+def test_add_titlebar_widget_left_inserts_before_title(titlebar):
+    """Extra left-side widgets appear between indicators and title."""
+    label = QLabel("L")
+    titlebar.add_titlebar_widget("left", label, side="left")
+
+    assert titlebar.layout().indexOf(label) < titlebar.layout().indexOf(titlebar._title_label)
+
+
+def test_add_titlebar_widget_replaces_existing(titlebar):
+    """Adding the same name replaces the previous widget."""
+    first = QLabel("1")
+    second = QLabel("2")
+
+    titlebar.add_titlebar_widget("slot", first)
+    titlebar.add_titlebar_widget("slot", second)
+
+    assert titlebar.titlebar_widget("slot") is second
+    assert first.parent() is None
+    assert titlebar.layout().indexOf(first) == -1
+
+
+def test_remove_titlebar_widget(titlebar):
+    """Named extra widgets can be removed."""
+    label = QLabel("VM")
+    titlebar.add_titlebar_widget("vm", label)
+
+    assert titlebar.remove_titlebar_widget("vm") is True
+    assert titlebar.titlebar_widget("vm") is None
+    assert label.parent() is None
+    assert titlebar.remove_titlebar_widget("vm") is False
+
+
+def test_add_titlebar_button_emits_callback(titlebar):
+    """Convenience API creates a native Qt tool button."""
+    calls = []
+    button = titlebar.add_titlebar_button(
+        "pin", "\u25ce", "Pin terminal", lambda: calls.append("clicked")
+    )
+
+    assert isinstance(button, QToolButton)
+    assert titlebar.titlebar_widget("pin") is button
+    assert button.toolTip() == "Pin terminal"
+    button.click()
+    assert calls == ["clicked"]
+
+
+def test_invalid_titlebar_widget_args(titlebar):
+    """Extension API rejects ambiguous slot definitions."""
+    with pytest.raises(ValueError):
+        titlebar.add_titlebar_widget("", QLabel("bad"))
+    with pytest.raises(ValueError):
+        titlebar.add_titlebar_widget("bad", QLabel("bad"), side="middle")
+
+
+def test_vm_indicator_show_and_hide(titlebar):
+    """VM convenience indicator is a removable titlebar widget."""
+    titlebar.set_vm_indicator("work")
+    label = titlebar.titlebar_widget("vm-indicator")
+
+    assert isinstance(label, QLabel)
+    assert label.text() == "VM: work"
+    assert "work" in label.toolTip()
+
+    titlebar.set_vm_indicator(None)
+    assert titlebar.titlebar_widget("vm-indicator") is None

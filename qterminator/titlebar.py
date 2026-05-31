@@ -2,7 +2,7 @@
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QPalette, QColor
-from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton
+from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QToolButton, QWidget
 
 
 ACTIVE_BG = "#2a6ea8"
@@ -27,10 +27,12 @@ class TerminalTitlebar(QFrame):
         self.setFixedHeight(TITLE_HEIGHT)
         self.setAutoFillBackground(True)
         self._active = False
+        self._extra_widgets = {}
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(4, 0, 2, 0)
         layout.setSpacing(4)
+        self._layout = layout
 
         # Group indicator (colored dot)
         self._group_label = QLabel()
@@ -51,10 +53,16 @@ class TerminalTitlebar(QFrame):
         self._activity_label.hide()
         layout.addWidget(self._activity_label)
 
+        self._left_extra_start = layout.count()
+        self._left_extra_count = 0
+
         # Title
         self._title_label = QLabel("Terminal")
         self._title_label.setStyleSheet("color: #ddd; font-size: 11px;")
         layout.addWidget(self._title_label, 1)
+
+        self._right_extra_start = layout.count()
+        self._right_extra_count = 0
 
         # Close button
         self._close_btn = QPushButton("\u00d7")  # × symbol
@@ -97,6 +105,90 @@ class TerminalTitlebar(QFrame):
 
     def set_activity(self, has_activity):
         self._activity_label.setVisible(has_activity)
+
+    def add_titlebar_widget(self, name: str, widget: QWidget, side: str = "right") -> QWidget:
+        """Add or replace a named Qt widget in the titlebar extension area.
+
+        side="left" inserts between the built-in indicators and the title.
+        side="right" inserts between the title and the close button.
+        """
+        if not name:
+            raise ValueError("titlebar widget name must be non-empty")
+        if widget is None:
+            raise ValueError("titlebar widget must not be None")
+        if side not in {"left", "right"}:
+            raise ValueError("side must be 'left' or 'right'")
+
+        self.remove_titlebar_widget(name)
+        if widget.parent() is None:
+            widget.setParent(self)
+
+        if side == "left":
+            index = self._left_extra_start + self._left_extra_count
+            self._left_extra_count += 1
+            self._right_extra_start += 1
+        else:
+            index = self._right_extra_start + self._right_extra_count
+            self._right_extra_count += 1
+
+        self._layout.insertWidget(index, widget)
+        self._extra_widgets[name] = (widget, side)
+        return widget
+
+    def add_titlebar_button(
+        self,
+        name: str,
+        text: str,
+        tooltip: str = "",
+        callback=None,
+        side: str = "right",
+    ) -> QToolButton:
+        """Create and add a named QToolButton in the titlebar extension area."""
+        button = QToolButton(self)
+        button.setText(text)
+        button.setFixedSize(16, 16)
+        button.setToolTip(tooltip)
+        button.setStyleSheet(
+            "QToolButton { color: #aaa; font-size: 11px; border: none; }"
+            "QToolButton:hover { color: #fff; background: #555; border-radius: 3px; }"
+        )
+        if callback is not None:
+            button.clicked.connect(callback)
+        return self.add_titlebar_widget(name, button, side)
+
+    def remove_titlebar_widget(self, name: str) -> bool:
+        """Remove a widget previously installed with add_titlebar_widget."""
+        entry = self._extra_widgets.pop(name, None)
+        if entry is None:
+            return False
+
+        widget, side = entry
+        self._layout.removeWidget(widget)
+        widget.hide()
+        widget.setParent(None)
+        if side == "left":
+            self._left_extra_count -= 1
+            self._right_extra_start -= 1
+        else:
+            self._right_extra_count -= 1
+        return True
+
+    def titlebar_widget(self, name: str) -> QWidget | None:
+        entry = self._extra_widgets.get(name)
+        return entry[0] if entry else None
+
+    def set_vm_indicator(self, vm_name: str | None):
+        """Show or hide a compact VM indicator on the titlebar."""
+        if not vm_name:
+            self.remove_titlebar_widget("vm-indicator")
+            return
+        label = QLabel(f"VM: {vm_name}", self)
+        label.setToolTip(f"Running in VM: {vm_name}")
+        label.setStyleSheet(
+            "color: #111; background: #f1c40f; border-radius: 3px;"
+            "font-size: 10px; font-weight: bold; padding: 0 4px;"
+        )
+        self.add_titlebar_widget("vm-indicator", label, side="left")
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
