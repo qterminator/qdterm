@@ -278,6 +278,15 @@ QTerminator supports plugins that extend terminal functionality. Plugins are Pyt
 - `~/.config/qterminator/plugins/` (user plugins)
 - `qterminator/plugins/` (built-in plugins)
 
+Bundled plugins auto-load at startup. User plugins are trusted Python code and
+must be explicitly enabled in `~/.config/qterminator/config.toml` before they
+auto-activate:
+
+```toml
+[plugins.my_plugin]
+enabled = true
+```
+
 ### Plugin base classes
 
 There are three base classes in `qterminator.plugin`:
