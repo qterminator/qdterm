@@ -542,20 +542,35 @@ def test_web_handler_returns_200_for_get():
 
 
 # ---------------------------------------------------------------------------
-# Security: non-loopback bind forces read_only
+# Security: non-loopback bind requires auth
 # ---------------------------------------------------------------------------
 
 def test_web_share_public_bind_no_keys_raises():
-    """Non-loopback + read_only=False without authorized_keys raises."""
+    """Non-loopback bind without authorized_keys raises."""
     with pytest.raises(RuntimeError, match="at least one Ed25519 key"):
         TmuxWebShareService(bind="0.0.0.0", read_only=False,
                             authorized_keys_path="/nonexistent/path")
 
 
-def test_web_share_public_bind_read_only_forces_true():
-    """Non-loopback bind with read_only=True stays read_only."""
-    svc = TmuxWebShareService(bind="0.0.0.0", read_only=True)
+def test_web_share_public_read_only_requires_keys(tmp_path):
+    """Non-loopback read-only still exposes terminal contents."""
+    with pytest.raises(RuntimeError, match="at least one Ed25519 key"):
+        TmuxWebShareService(
+            bind="0.0.0.0", read_only=True,
+            authorized_keys_path=str(tmp_path / "missing"),
+        )
+
+
+def test_web_share_public_read_only_with_keys_requires_auth(tmp_path):
+    pk = Ed25519PrivateKey.generate()
+    akfile = tmp_path / "authorized_keys"
+    akfile.write_text(_make_ssh_ed25519_line(pk) + "\n")
+    svc = TmuxWebShareService(
+        bind="0.0.0.0", read_only=True,
+        authorized_keys_path=str(akfile),
+    )
     assert svc.read_only is True
+    assert svc._auth_required is True
 
 
 def test_web_share_loopback_allows_read_write():
@@ -959,7 +974,7 @@ def test_loopback_share_skips_auth(monkeypatch):
 
 def test_nonloopback_rw_requires_keys_file(tmp_path):
     """Non-loopback read-write without authorized_keys file raises."""
-    with pytest.raises(RuntimeError, match="at least one Ed25519 key"):
+    with pytest.raises(RuntimeError, match="Non-loopback web share"):
         TmuxWebShareService(
             bind="0.0.0.0", read_only=False,
             authorized_keys_path=str(tmp_path / "missing"),
@@ -970,7 +985,7 @@ def test_nonloopback_rw_with_empty_keys_file_raises(tmp_path):
     """Non-loopback read-write with empty authorized_keys raises."""
     akfile = tmp_path / "authorized_keys"
     akfile.write_text("# only comments\n\n")
-    with pytest.raises(RuntimeError, match="at least one Ed25519 key"):
+    with pytest.raises(RuntimeError, match="Non-loopback web share"):
         TmuxWebShareService(
             bind="0.0.0.0", read_only=False,
             authorized_keys_path=str(akfile),

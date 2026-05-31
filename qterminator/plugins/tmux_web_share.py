@@ -444,19 +444,18 @@ class TmuxWebShareService:
         self.authorized_keys_path = authorized_keys_path or _AUTHORIZED_KEYS_PATH
         self._auth_required = False
 
-        if bind not in _LOOPBACK_BINDS and not read_only:
-            # Non-loopback read-write requires authorized_keys with at least one key
+        if bind not in _LOOPBACK_BINDS:
+            # Non-loopback shares expose terminal contents even when
+            # read-only, so every public bind requires client auth.
             keys = _load_authorized_keys(self.authorized_keys_path)
             if not keys:
                 raise RuntimeError(
-                    f"Non-loopback read-write web share requires at least one "
+                    f"Non-loopback web share requires at least one "
                     f"Ed25519 key in {self.authorized_keys_path}"
                 )
             self._authorized_keys = keys
             self._auth_required = True
         else:
-            if bind not in _LOOPBACK_BINDS:
-                read_only = True
             self._authorized_keys: list[Ed25519PublicKey] = []
 
         self.read_only = read_only

@@ -153,7 +153,8 @@ class EditableTabBar(QTabBar):
 class MainWindow(QMainWindow):
     """Top-level window containing tabs of split terminal panes."""
 
-    def __init__(self, parent=None, resolved_theme=None):
+    def __init__(self, parent=None, resolved_theme=None,
+                 create_initial_tab=True):
         super().__init__(parent)
         self.setWindowTitle("QTerminator")
         self._active_terminal = None
@@ -180,8 +181,8 @@ class MainWindow(QMainWindow):
         self._setup_menubar()
         self._setup_plugins()
 
-        # Create initial tab with one terminal
-        self.new_tab()
+        if create_initial_tab:
+            self.new_tab()
 
         self.resize(800, 500)
 

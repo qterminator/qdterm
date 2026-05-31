@@ -160,6 +160,11 @@ def _set_process_name(name="qterminator"):
         pass
 
 
+def _execute_shell_command(args):
+    """Return argv for -x/--execute, or None when normal shell starts."""
+    return list(args.execute) if args.execute else None
+
+
 def main():
     _set_process_name("qterminator")
     args = parse_args()
@@ -196,7 +201,10 @@ def main():
     if args.borderless:
         window_flags = Qt.WindowType.FramelessWindowHint
 
-    window = MainWindow(resolved_theme=resolved_theme)
+    window = MainWindow(
+        resolved_theme=resolved_theme,
+        create_initial_tab=False,
+    )
     if window_flags:
         window.setWindowFlags(window_flags)
 
@@ -221,12 +229,17 @@ def main():
             restored = True
     elif (not args.no_restore
             and not args.working_directory
-            and not args.execute
+            and args.execute is None
             and not args.command):
         restored = window.restore_layout()
 
+    execute_argv = _execute_shell_command(args)
+
     if not restored:
-        window.new_tab(working_directory=args.working_directory)
+        window.new_tab(
+            working_directory=args.working_directory,
+            shell_command=execute_argv,
+        )
 
     if args.title:
         window.setWindowTitle(args.title)
@@ -240,9 +253,7 @@ def main():
 
     # Execute command if given
     cmd_text = None
-    if args.execute:
-        cmd_text = " ".join(args.execute)
-    elif args.command:
+    if args.command:
         cmd_text = args.command
 
     if cmd_text and window._active_terminal:

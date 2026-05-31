@@ -949,12 +949,40 @@ class TestMainEntrypointRestore:
 
     def test_main_flow_no_restore_flag(self, qtbot):
         """--no-restore: window has 1 tab, no restore called."""
-        win = MainWindow()
+        win = MainWindow(create_initial_tab=False)
         qtbot.addWidget(win)
         # main() does NOT call restore_layout when --no-restore
-        # It calls new_tab() but constructor already made one
-        # So just verify no extra tab is added
+        # It creates the startup tab explicitly after restore decisions.
+        win.new_tab()
         assert win._tabs.count() == 1
+
+    def test_main_flow_execute_uses_single_command_tab(self, qtbot):
+        """-x starts the requested argv without leaving a default shell tab."""
+        win = MainWindow(create_initial_tab=False)
+        qtbot.addWidget(win)
+        command = ["printf", "%s\n", "a;touch /tmp/bad"]
+
+        terminal = win.new_tab(shell_command=command)
+
+        assert win._tabs.count() == 1
+        assert terminal._shell_command == command
+
+    def test_main_flow_empty_execute_does_not_restore_saved_layout(self, qtbot):
+        """Bare -x behaves like a fresh shell launch, not session restore."""
+        win1 = MainWindow()
+        qtbot.addWidget(win1)
+        win1.new_tab()
+        win1.save_layout()
+
+        Config._instance = None
+        win2 = MainWindow(create_initial_tab=False)
+        qtbot.addWidget(win2)
+
+        restored = False  # main() skips restore because args.execute is []
+        if not restored:
+            win2.new_tab(shell_command=None)
+
+        assert win2._tabs.count() == 1
 
     def test_main_flow_with_restore(self, qtbot):
         """Normal startup: save 2 tabs, simulate restart, get 2 tabs."""
@@ -967,7 +995,7 @@ class TestMainEntrypointRestore:
 
         # Second "run" — simulate main() logic
         Config._instance = None
-        win2 = MainWindow()
+        win2 = MainWindow(create_initial_tab=False)
         qtbot.addWidget(win2)
 
         # main() does: restored = window.restore_layout()
@@ -986,23 +1014,18 @@ class TestMainEntrypointRestore:
 
         # Second run with -d flag: main() skips restore
         Config._instance = None
-        win2 = MainWindow()
+        win2 = MainWindow(create_initial_tab=False)
         qtbot.addWidget(win2)
         # main() does NOT call restore_layout when args.working_directory
-        # It calls new_tab(working_directory=...) instead
-        # But constructor already made 1 tab, so we get 2
-        # Actually main() does: if not restored: window.new_tab(wd)
-        # Since restored=False (not called), it adds one tab
-        # This means 2 tabs: initial + the -d tab
-        # To match main()'s actual behavior correctly:
+        # It calls new_tab(working_directory=...) after restore decisions.
         win2.new_tab(working_directory=str(tmp_path))
-        assert win2._tabs.count() == 2
+        assert win2._tabs.count() == 1
 
     def test_main_flow_empty_config(self, qtbot):
         """First ever launch: no saved layout, get 1 tab."""
-        win = MainWindow()
+        win = MainWindow(create_initial_tab=False)
         qtbot.addWidget(win)
         restored = win.restore_layout()
         assert restored is False
-        # main() would call new_tab(), but constructor already made one
+        win.new_tab()
         assert win._tabs.count() == 1

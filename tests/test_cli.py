@@ -2,7 +2,7 @@
 
 import pytest
 
-from qterminator.__main__ import parse_args
+from qterminator.__main__ import _execute_shell_command, parse_args
 
 
 # --- Existing tests (preserved) ---
@@ -142,6 +142,23 @@ def test_execute_multiple_args(monkeypatch):
     monkeypatch.setattr("sys.argv", ["qterminator", "-x", "grep", "-rn", "foo", "."])
     args = parse_args()
     assert args.execute == ["grep", "-rn", "foo", "."]
+
+
+def test_execute_shell_command_preserves_argv_metacharacters(monkeypatch):
+    monkeypatch.setattr(
+        "sys.argv",
+        ["qterminator", "-x", "printf", "%s\n", "a;touch /tmp/bad"],
+    )
+    args = parse_args()
+    assert _execute_shell_command(args) == [
+        "printf", "%s\n", "a;touch /tmp/bad",
+    ]
+
+
+def test_execute_shell_command_empty_execute_starts_normal_shell(monkeypatch):
+    monkeypatch.setattr("sys.argv", ["qterminator", "-x"])
+    args = parse_args()
+    assert _execute_shell_command(args) is None
 
 
 # --- Working directory variations ---
