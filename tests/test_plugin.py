@@ -322,22 +322,18 @@ def test_plugin_manager_identifies_user_plugins(tmp_path, monkeypatch, fresh_con
         "    name = 'userplug'\n",
         encoding="utf-8",
     )
-    original_dirs = plugin_mod.PLUGIN_DIRS
-    plugin_mod.PLUGIN_DIRS = [
+    monkeypatch.setattr(plugin_mod, "PLUGIN_DIRS", [
         os.path.join(os.path.dirname(plugin_mod.__file__), "plugins"),
         str(user_dir),
-    ]
-    try:
-        pm = PluginManager()
-        pm.discover()
-        assert pm.is_builtin("url_handlers") is True
-        assert pm.is_builtin("userplug") is False
-        assert pm.is_enabled_by_config("userplug") is False
-        cfg = Config()
-        cfg.set("plugins", "userplug", "enabled", True)
-        assert pm.is_enabled_by_config("userplug") is True
-    finally:
-        plugin_mod.PLUGIN_DIRS = original_dirs
+    ])
+    pm = PluginManager()
+    pm.discover()
+    assert pm.is_builtin("url_handlers") is True
+    assert pm.is_builtin("userplug") is False
+    assert pm.is_enabled_by_config("userplug") is False
+    cfg = Config()
+    cfg.set("plugins", "userplug", "enabled", True)
+    assert pm.is_enabled_by_config("userplug") is True
 
 
 # ---------------------------------------------------------------------------
