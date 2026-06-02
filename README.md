@@ -4,6 +4,17 @@ A Qt port of the [Terminator](https://github.com/gnome-terminator/terminator) te
 
 ![screenshot](screenshots/main.png)
 
+## Role in qdistro
+
+qterminator is the first-party terminal for qdistro. It gives the owner a
+modifiable PyQt terminal with tabs, recursive splits, profiles, plugins, and
+agent-control hooks, while fitting the same testing/configuration conventions as
+qdbrowser, qnotebook, and qfileman.
+
+In qdistro images, qterminator depends on the SIP-built QTermWidget Python
+binding. Source installs must build or install that binding before the terminal
+is considered usable.
+
 ## Features
 
 - **Tabs and splits** -- horizontal and vertical splits with recursive nesting; tab bar with close, rename, and reorder
