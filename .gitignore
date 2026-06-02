@@ -1,23 +1,44 @@
+# Python
 __pycache__/
 *.py[cod]
+*.pyo
+*.pyc
 *.so
 *.egg-info/
-dist/
-build/
-.venv/
 .eggs/
-*.whl
+*.egg
 .pytest_cache/
+.coverage
+htmlcov/
 
-# Log files and packaging artifacts
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Build & packaging
+build/
+dist/
+*.whl
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Editor & IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.cache/
+.zed
+
+# Logs & artifacts
 *.log
 ci.log
 stage/
 *.deb
 *.rpm
-
-# Editor/OS cruft
-.vscode/
-.idea/
-*.swp
-.DS_Store
