@@ -170,8 +170,10 @@ def _inject_scrollback(terminal, text):
             # restoring display-only content; however QTermWidget lacks a
             # public "write to display" API, so we use it only as a last
             # resort and only inject the banner text, not arbitrary content,
-            # to avoid command execution.
-            term.sendText("echo -e " + _shell_escape(payload) + "\n")
+            # to avoid command execution. Route through TerminalWidget.send_text
+            # so a read-only pane is honoured (fail-closed) rather than written
+            # to via the raw QTermWidget API.
+            terminal.send_text("echo -e " + _shell_escape(payload) + "\n")
     except Exception:
         pass
 

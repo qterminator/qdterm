@@ -118,6 +118,175 @@ class TestTerminalReadOnly:
         t.toggle_read_only()
         assert t.is_read_only() is False
 
+    # --- Enforcement: the flag must actually block direct input ---
+
+    def _key_event(self, text="a", key=Qt.Key.Key_A):
+        from PyQt6.QtGui import QKeyEvent
+        from PyQt6.QtCore import QEvent
+        return QKeyEvent(QEvent.Type.KeyPress, key,
+                         Qt.KeyboardModifier.NoModifier, text)
+
+    def test_event_filter_installed(self, qtbot):
+        t = _make_terminal(qtbot)
+        assert t._read_only_filter is not None
+
+    def test_key_delivery_to_focus_proxy_blocked_when_read_only(self, qtbot):
+        """End-to-end: the filter must intercept events delivered to the
+        widget that actually receives keystrokes -- QTermWidget's focus proxy
+        (the inner TerminalDisplay), not the outer QTermWidget. A filter on
+        the wrong widget would be silently bypassed by real typing.
+        """
+        from PyQt6.QtWidgets import QApplication
+        t = _make_terminal(qtbot)
+        target = t._term.focusProxy() or t._term
+
+        # Writable: event is not accepted by our filter (propagates normally).
+        ev = self._key_event()
+        t.set_read_only(False)
+        QApplication.sendEvent(target, ev)
+        # Read-only: sending to the real input target is fully consumed.
+        ev2 = self._key_event()
+        t.set_read_only(True)
+        handled = QApplication.sendEvent(target, ev2)
+        assert handled is True and ev2.isAccepted()
+
+    def test_keypress_passes_through_when_writable(self, qtbot):
+        t = _make_terminal(qtbot)
+        # Not read-only -> filter must not swallow (returns False).
+        ev = self._key_event()
+        assert t._read_only_filter.eventFilter(t._term, ev) is False
+
+    def test_keypress_swallowed_when_read_only(self, qtbot):
+        t = _make_terminal(qtbot)
+        t.set_read_only(True)
+        ev = self._key_event()
+        # True == swallowed: the key never reaches the terminal/pty.
+        assert t._read_only_filter.eventFilter(t._term, ev) is True
+
+    def test_keyrelease_swallowed_when_read_only(self, qtbot):
+        from PyQt6.QtGui import QKeyEvent
+        from PyQt6.QtCore import QEvent
+        t = _make_terminal(qtbot)
+        t.set_read_only(True)
+        ev = QKeyEvent(QEvent.Type.KeyRelease, Qt.Key.Key_A,
+                       Qt.KeyboardModifier.NoModifier, "a")
+        assert t._read_only_filter.eventFilter(t._term, ev) is True
+
+    def test_input_method_swallowed_when_read_only(self, qtbot):
+        from PyQt6.QtGui import QInputMethodEvent
+        t = _make_terminal(qtbot)
+        t.set_read_only(True)
+        ev = QInputMethodEvent("commit", [])
+        assert t._read_only_filter.eventFilter(t._term, ev) is True
+
+    def test_input_method_passes_when_writable(self, qtbot):
+        from PyQt6.QtGui import QInputMethodEvent
+        t = _make_terminal(qtbot)
+        ev = QInputMethodEvent("commit", [])
+        assert t._read_only_filter.eventFilter(t._term, ev) is False
+
+    def test_non_input_event_not_swallowed_when_read_only(self, qtbot):
+        from PyQt6.QtCore import QEvent
+        t = _make_terminal(qtbot)
+        t.set_read_only(True)
+        # A paint event must always pass through, even in read-only mode.
+        ev = QEvent(QEvent.Type.Paint)
+        assert t._read_only_filter.eventFilter(t._term, ev) is False
+
+    def test_paste_clipboard_blocked_when_read_only(self, qtbot, monkeypatch):
+        t = _make_terminal(qtbot)
+        t.set_read_only(True)
+        pasted = []
+        monkeypatch.setattr(t._term, "pasteClipboard",
+                            lambda: pasted.append(True))
+        t.paste_clipboard()
+        assert pasted == []
+
+    def test_paste_selection_blocked_when_read_only(self, qtbot, monkeypatch):
+        t = _make_terminal(qtbot)
+        t.set_read_only(True)
+        pasted = []
+        monkeypatch.setattr(t._term, "pasteSelection",
+                            lambda: pasted.append(True))
+        t.paste_selection()
+        assert pasted == []
+
+    def test_paste_allowed_when_writable(self, qtbot, monkeypatch):
+        t = _make_terminal(qtbot)
+        # Writable + non-dangerous clipboard -> paste proceeds.
+        monkeypatch.setattr(t, "_confirm_dangerous_paste", lambda: True)
+        pasted = []
+        monkeypatch.setattr(t._term, "pasteClipboard",
+                            lambda: pasted.append(True))
+        t.paste_clipboard()
+        assert pasted == [True]
+
+    # --- send_text central gate (broadcast / MCP / snippets / triggers etc.) ---
+
+    def test_send_text_blocked_when_read_only(self, qtbot, monkeypatch):
+        t = _make_terminal(qtbot)
+        t.set_read_only(True)
+        sent = []
+        monkeypatch.setattr(t._term, "sendText", lambda s: sent.append(s))
+        assert t.send_text("rm -rf /\n") is False
+        assert sent == []
+
+    def test_send_text_allowed_when_writable(self, qtbot, monkeypatch):
+        t = _make_terminal(qtbot)
+        sent = []
+        monkeypatch.setattr(t._term, "sendText", lambda s: sent.append(s))
+        assert t.send_text("ls\n") is True
+        assert sent == ["ls\n"]
+
+    def test_send_text_force_bypasses_read_only(self, qtbot, monkeypatch):
+        t = _make_terminal(qtbot)
+        t.set_read_only(True)
+        sent = []
+        monkeypatch.setattr(t._term, "sendText", lambda s: sent.append(s))
+        assert t.send_text("x", force=True) is True
+        assert sent == ["x"]
+
+    def test_reset_suppressed_when_read_only(self, qtbot, monkeypatch):
+        t = _make_terminal(qtbot)
+        t.set_read_only(True)
+        sent = []
+        monkeypatch.setattr(t._term, "sendText", lambda s: sent.append(s))
+        t.reset()
+        assert sent == []
+
+    # --- Middle-click paste (primary-selection paste into the pty) ---
+
+    def _mouse_event(self, button):
+        from PyQt6.QtGui import QMouseEvent
+        from PyQt6.QtCore import QEvent, QPointF
+        return QMouseEvent(QEvent.Type.MouseButtonPress, QPointF(1, 1),
+                           button, button, Qt.KeyboardModifier.NoModifier)
+
+    def test_middle_click_blocked_when_read_only(self, qtbot):
+        t = _make_terminal(qtbot)
+        t.set_read_only(True)
+        ev = self._mouse_event(Qt.MouseButton.MiddleButton)
+        assert t._read_only_filter.eventFilter(t._term, ev) is True
+
+    def test_middle_click_passes_when_writable(self, qtbot):
+        t = _make_terminal(qtbot)
+        ev = self._mouse_event(Qt.MouseButton.MiddleButton)
+        assert t._read_only_filter.eventFilter(t._term, ev) is False
+
+    def test_left_click_not_blocked_when_read_only(self, qtbot):
+        # Left-button selection is a non-mutating read-only operation.
+        t = _make_terminal(qtbot)
+        t.set_read_only(True)
+        ev = self._mouse_event(Qt.MouseButton.LeftButton)
+        assert t._read_only_filter.eventFilter(t._term, ev) is False
+
+    def test_right_click_not_blocked_when_read_only(self, qtbot):
+        # Right-button drives the context menu; must keep working read-only.
+        t = _make_terminal(qtbot)
+        t.set_read_only(True)
+        ev = self._mouse_event(Qt.MouseButton.RightButton)
+        assert t._read_only_filter.eventFilter(t._term, ev) is False
+
 
 class TestTerminalGroup:
     """Tests for the group property (broadcast input)."""
@@ -402,7 +571,10 @@ class TestSplitContainerAddTerminal:
 
     def test_add_terminal_with_existing(self, qtbot):
         s = _make_split(qtbot)
-        t = _make_terminal(qtbot)
+        # Don't register `t` with qtbot: add_terminal() reparents it into `s`,
+        # so qtbot would otherwise try to close an already-deleted widget at
+        # teardown ("wrapped C/C++ object ... has been deleted").
+        t = TerminalWidget()
         result = s.add_terminal(terminal=t)
         assert result is t
         assert s.count() == 1

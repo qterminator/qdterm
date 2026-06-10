@@ -269,11 +269,10 @@ def _action_capture(service: "TriggersService", rule: Rule,
 def _action_ring_bell(service: "TriggersService", rule: Rule,
                       event: TriggerEvent) -> None:
     try:
-        term = event.terminal.term
-        # QTermWidget has bellNotification or simply emit it via
-        # writing the bell byte — the latter goes back into the PTY,
-        # which is what shells do anyway.
-        term.sendText("\a")
+        # Route through TerminalWidget.send_text so the bell byte is suppressed
+        # on read-only panes (writing it goes back into the PTY, same as any
+        # shell-injected input).
+        event.terminal.send_text("\a")
     except Exception:
         pass
 

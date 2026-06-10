@@ -2,7 +2,7 @@
 
 import os
 
-from PyQt6.QtCore import pyqtSignal, Qt, QTimer
+from PyQt6.QtCore import pyqtSignal, Qt, QTimer, QObject, QEvent
 from PyQt6.QtGui import QFont, QColor, QPalette
 from PyQt6.QtWidgets import QVBoxLayout, QWidget, QApplication
 
@@ -10,6 +10,65 @@ from QTermWidget import QTermWidget
 
 from qterminator.titlebar import TerminalTitlebar
 from qterminator.config import Config
+
+
+class _ReadOnlyFilter(QObject):
+    """Event filter that swallows input events while the terminal is read-only.
+
+    Installed on the QTermWidget's focus proxy (the inner TerminalDisplay, where
+    key/IME events are actually delivered). When the owning
+    :class:`TerminalWidget` is read-only, any event that could send data to the
+    pty -- key presses/releases, IME composition, and text drops -- is consumed
+    so the local input path honours the same contract as broadcast targets
+    (``window._on_terminal_key``) and web-share, which already gate on the flag.
+
+    Copy, text selection (left-button drag), scrolling, search and context-menu
+    actions are NOT pty writes -- they are routed through Qt selection / window
+    QActions -- so they keep working in read-only mode. What IS blocked:
+
+    - key presses/releases and IME composition (typing),
+    - text drag-and-drop,
+    - middle-button paste (QTermWidget's middle click pastes the primary
+      selection straight into the pty).
+
+    Known residual: if a TUI has enabled xterm mouse-reporting, mouse clicks
+    emit escape sequences to the pty. The QTermWidget binding exposes no way to
+    query that mode, and blanket-blocking left-button events would break text
+    selection (the primary read-only use case), so reporting-mode mouse escapes
+    are not gated here. Keyboard input -- the path this fix targets -- is fully
+    closed.
+    """
+
+    # Events that can mutate the pty / inject text into the session.
+    _BLOCKED = frozenset({
+        QEvent.Type.KeyPress,
+        QEvent.Type.KeyRelease,
+        QEvent.Type.InputMethod,
+        QEvent.Type.Drop,
+        QEvent.Type.DragEnter,
+        QEvent.Type.DragMove,
+    })
+
+    # Mouse events whose middle button triggers a primary-selection paste.
+    _MOUSE = frozenset({
+        QEvent.Type.MouseButtonPress,
+        QEvent.Type.MouseButtonRelease,
+        QEvent.Type.MouseButtonDblClick,
+    })
+
+    def __init__(self, owner):
+        super().__init__(owner)
+        self._owner = owner
+
+    def eventFilter(self, obj, event):
+        if not self._owner.is_read_only():
+            return False
+        etype = event.type()
+        if etype in self._BLOCKED:
+            return True  # swallow: no input reaches the terminal
+        if etype in self._MOUSE and event.button() == Qt.MouseButton.MiddleButton:
+            return True  # block middle-click paste into the read-only pty
+        return False
 
 
 class TerminalWidget(QWidget):
@@ -55,6 +114,24 @@ class TerminalWidget(QWidget):
 
         # Terminal
         self._term = QTermWidget(0)  # 0 = don't start shell yet
+
+        # Read-only enforcement: swallow key/IME/drop events on the terminal
+        # while _read_only is set, so the local input path matches the
+        # broadcast / web-share contract (which already honour the flag).
+        # The window system delivers key/IME events to the *focus widget*,
+        # which for QTermWidget is its focus proxy (the inner TerminalDisplay),
+        # NOT the QTermWidget itself -- a filter on the outer widget would be
+        # bypassed by real keystrokes. Install on the proxy when present, with
+        # the outer widget as a defensive fallback.
+        self._read_only_filter = _ReadOnlyFilter(self)
+        # Filter the focus proxy (keystroke target) and, defensively, the outer
+        # widget too -- drag/drop and any later-routed events may land there.
+        targets = {self._term}
+        proxy = self._term.focusProxy()
+        if proxy is not None:
+            targets.add(proxy)
+        for tgt in targets:
+            tgt.installEventFilter(self._read_only_filter)
 
         # Apply config
         profile = self._config.get_profile(self._profile_name)
@@ -216,10 +293,14 @@ class TerminalWidget(QWidget):
         self._term.copyClipboard()
 
     def paste_clipboard(self):
+        if self._read_only:
+            return
         if self._confirm_dangerous_paste():
             self._term.pasteClipboard()
 
     def paste_selection(self):
+        if self._read_only:
+            return
         if self._confirm_dangerous_paste():
             self._term.pasteSelection()
 
@@ -260,8 +341,20 @@ class TerminalWidget(QWidget):
     def zoom_out(self):
         self._term.zoomOut()
 
-    def send_text(self, text):
+    def send_text(self, text, force=False):
+        """Write text to the pty.
+
+        Honours read-only mode (fail-closed): when the pane is read-only the
+        write is suppressed unless ``force=True``. This centralizes the
+        read-only gate so every text-injection surface -- broadcast, snippets,
+        smart-clipboard, scheduler/triggers, and the MCP/agent control RPCs --
+        respects the flag, not just direct keyboard input. Returns True if the
+        text was sent, False if it was suppressed.
+        """
+        if self._read_only and not force:
+            return False
         self._term.sendText(text)
+        return True
 
     def selected_text(self):
         return self._term.selectedText()
@@ -362,7 +455,9 @@ class TerminalWidget(QWidget):
         self._group = name
         self._titlebar.set_group(name)
 
-    # Key event filtering for read-only mode
+    # Focus / context menu
+    # (Read-only key/IME filtering is handled by _ReadOnlyFilter, installed on
+    # the QTermWidget in _setup_ui.)
 
     def focusInEvent(self, event):
         super().focusInEvent(event)
