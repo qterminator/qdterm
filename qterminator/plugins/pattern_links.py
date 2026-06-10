@@ -118,7 +118,19 @@ class StackTraceHandler(URLHandler):
         return None
 
     def _open_file(self, filepath, line):
-        """Open a file at a specific line in $EDITOR or xdg-open."""
+        """Open a file at a specific line in $EDITOR or xdg-open.
+
+        The file path is parsed from arbitrary (possibly hostile) terminal
+        output, so only open it if it refers to an existing regular file on
+        disk. This applies the same kind of existence guard FilePathHandler
+        uses, but slightly stricter: os.path.isfile rejects non-existent
+        paths as well as special files such as directories, device nodes, and
+        FIFOs that could trigger unwanted side effects when handed to an
+        editor. It resolves symlinks and is True only when the final target
+        is a regular file.
+        """
+        if not os.path.isfile(filepath):
+            return None
         editor = os.environ.get("EDITOR", "")
         if editor:
             # Many editors support +line syntax (vim, nvim, nano, code, etc.)
