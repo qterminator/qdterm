@@ -351,6 +351,14 @@ def test_walk_proc_tree_includes_known_descendant():
 
 # ---------------------------------------------------------------------------
 # Service tests -- drive real OSC parser via ShadowScreen
+#
+# NOTE on the ``time.sleep`` calls in this section: they sit between the
+# ``;C`` (command-start) and ``;D`` (command-done) OSC feeds. ``shadow.feed``
+# is fully synchronous, so there is NO signal or observable condition to wait
+# on here -- the sleep deliberately injects a small amount of *wall-clock time*
+# so the measured command duration is non-zero/measurable. Replacing these
+# with ``qtbot.waitSignal``/``waitUntil`` is therefore not possible (there is
+# no event), which is why they are intentionally left as fixed sleeps.
 # ---------------------------------------------------------------------------
 
 @pytest.fixture

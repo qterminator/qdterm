@@ -30,7 +30,11 @@ from PyQt6.QtWidgets import QWidget
 
 try:
     import QTermWidget  # noqa: F401
-except ModuleNotFoundError:
+except ImportError:
+    # Broad ImportError (not just ModuleNotFoundError): a present-but-broken
+    # real binding (e.g. the .so is installed but libqtermwidget6.so cannot be
+    # loaded) raises a plain ImportError. Falling back to the fake keeps the
+    # whole suite collectable instead of erroring out at import time.
     qtermwidget = types.ModuleType("QTermWidget")
 
     class _ScrollBarPosition:
@@ -39,6 +43,10 @@ except ModuleNotFoundError:
         ScrollBarRight = 2
 
     class _FakeQTermWidget(QWidget):
+        # Sentinel so dependency-gated tests can tell the in-process fake
+        # apart from the real QTermWidget SIP binding and skip cleanly.
+        _QTERMINATOR_FAKE = True
+
         finished = pyqtSignal()
         titleChanged = pyqtSignal()
         termGetFocus = pyqtSignal()
@@ -162,6 +170,24 @@ except ModuleNotFoundError:
 
         def screenColumnsCount(self):
             return 80
+
+        def screenLinesCount(self):
+            # Visible rows on the screen (excludes scrollback history).
+            return 24
+
+        def historyLinesCount(self):
+            # Lines currently held in the scrollback buffer.
+            return 0
+
+        def setSelectionStart(self, row, column):
+            # SIP signature: setSelectionStart(int row, int column). The fake
+            # records intent (row, column) so buffer/pdf export paths can drive
+            # selection without a PTY; the stored order matches the real API so
+            # tests inspecting selection don't inherit inverted semantics.
+            self._selection_start = (row, column)
+
+        def setSelectionEnd(self, row, column):
+            self._selection_end = (row, column)
 
         def grab(self, _rectangle=None):
             pixmap = QPixmap(320, 180)

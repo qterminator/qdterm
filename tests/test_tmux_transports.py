@@ -1012,3 +1012,91 @@ def test_nonloopback_rw_with_valid_keys_succeeds(tmp_path, monkeypatch):
         assert share.read_only is False
     finally:
         svc.stop_all()
+
+
+# ---------------------------------------------------------------------------
+# TmuxSSHShareService session-name validation
+#
+# The session name is interpolated into the sshd ForceCommand
+# ``tmux attach -t {session}``. An unsafe name (spaces, ``;``, ``$()``,
+# backticks, newlines) could break out of that command, so start_share
+# enforces ``^[a-zA-Z0-9_.\-]+$`` and raises ValueError before spawning
+# anything. These tests assert the gate rejects hostile names and accepts
+# benign ones. All subprocess work is mocked -- nothing is executed.
+# ---------------------------------------------------------------------------
+
+class _FakeSSHDProc:
+    stderr = None
+
+    def poll(self):
+        return None
+
+    def terminate(self):
+        pass
+
+    def wait(self, timeout=None):
+        return 0
+
+
+def _ssh_service_with_mocked_tools(monkeypatch, tmp_path):
+    """A service whose external tools are all present and mocked out."""
+    monkeypatch.setattr(
+        "qterminator.plugins.tmux_ssh_share.shutil.which",
+        lambda name: f"/usr/bin/{name}",
+    )
+    monkeypatch.setattr(
+        "qterminator.plugins.tmux_ssh_share._free_tcp_port", lambda _bind: 22321,
+    )
+    monkeypatch.setattr(
+        "qterminator.plugins.tmux_ssh_share.subprocess.run", lambda *a, **k: None,
+    )
+    monkeypatch.setattr(
+        "qterminator.plugins.tmux_ssh_share.subprocess.Popen",
+        lambda *a, **k: _FakeSSHDProc(),
+    )
+    return TmuxSSHShareService(
+        bind="127.0.0.1", authorized_keys=str(tmp_path / "authorized_keys"),
+    )
+
+
+@pytest.mark.parametrize("bad_name", [
+    "with spaces",
+    "evil; rm -rf /",
+    "$(reboot)",
+    "`whoami`",
+    "name&&other",
+    "pipe|attack",
+    "newline\nattack",
+    "quote'attack",
+    "slash/attack",
+    # Trailing newline / CR: a $ anchor matches just before a trailing \n,
+    # so "attack\n" would be wrongly accepted (and then keyed into _shares
+    # and fed to the sshd ForceCommand). \Z rejects both.
+    "attack\n",
+    "attack\r",
+    "",
+])
+def test_start_share_rejects_unsafe_session_name(monkeypatch, tmp_path, bad_name):
+    svc = _ssh_service_with_mocked_tools(monkeypatch, tmp_path)
+    with pytest.raises(ValueError, match="unsafe characters"):
+        svc.start_share(bad_name)
+    # Nothing was registered for the rejected name.
+    assert svc._shares == {}
+
+
+@pytest.mark.parametrize("good_name", [
+    "qterm-1",
+    "session_2",
+    "my.session",
+    "ABC123",
+    "a-b_c.d",
+])
+def test_start_share_accepts_safe_session_name(monkeypatch, tmp_path, good_name):
+    svc = _ssh_service_with_mocked_tools(monkeypatch, tmp_path)
+    share = svc.start_share(good_name)
+    try:
+        assert share.session == good_name
+        assert svc._shares.get(good_name) == [share]
+    finally:
+        # Mocked proc: stop() is a no-op-ish cleanup.
+        svc.stop_all()

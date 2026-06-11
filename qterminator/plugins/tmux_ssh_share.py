@@ -80,7 +80,10 @@ class TmuxSSHShareService:
     def ports_for(self, session: str) -> list[int]:
         return [s.port for s in self.shares_for(session)]
 
-    _SAFE_SESSION = re.compile(r"^[a-zA-Z0-9_.\-]+$")
+    # NB: \Z (not $) -- $ matches just before a trailing newline, so the $
+    # form would accept "attack\n", which then keys _shares and is fed into
+    # the sshd ForceCommand. \Z anchors at the true end of string.
+    _SAFE_SESSION = re.compile(r"^[a-zA-Z0-9_.\-]+\Z")
 
     def start_share(self, session: str, port: int = 0) -> SSHShare:
         if not self.available():

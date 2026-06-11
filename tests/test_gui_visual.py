@@ -1,14 +1,26 @@
 """Visual GUI tests with a real event loop.
 
-These tests use qtbot.waitExposed() + qtbot.wait() so widgets
-actually render (including terminal content). Screenshots are saved
-to /tmp/qterminator_test_*.png for manual inspection.
+These tests use qtbot.waitExposed() + qtbot.waitUntil() so widgets
+actually render (including terminal content) before assertions run, instead
+of fixed sleeps. Screenshots are saved to /tmp/qterminator_test_*.png for
+manual inspection.
 """
 
 import os
 import pytest
 from PyQt6.QtCore import Qt
 from PyQt6.QtTest import QTest
+
+# PNG files begin with this 8-byte signature.
+_PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+
+
+def _is_valid_png(path, min_size=5000):
+    """A rendered screenshot must exist, be non-trivial, and be a real PNG."""
+    if not os.path.exists(path) or os.path.getsize(path) <= min_size:
+        return False
+    with open(path, "rb") as fh:
+        return fh.read(8) == _PNG_MAGIC
 
 import qterminator.config as config_mod
 from qterminator.config import Config
@@ -50,18 +62,34 @@ def window(qtbot, themed_app):
     win.resize(900, 600)
     win.show()
     qtbot.waitExposed(win)
-    qtbot.wait(200)  # let terminal render
+    # Wait on the observable condition (terminal laid out with real size)
+    # instead of a fixed 200ms sleep, so the fixture isn't flaky on slow
+    # hosts and isn't wastefully slow on fast ones.
+    split = win._tabs.widget(0)
+    qtbot.waitUntil(
+        lambda: split.find_terminals()
+        and split.find_terminals()[0].width() > 0
+        and split.find_terminals()[0].height() > 0,
+        timeout=2000,
+    )
     return win
 
 
 class TestSingleTerminal:
     def test_renders(self, window, qtbot):
         """Single terminal renders with shell content."""
-        qtbot.wait(500)
-        path = _save(window, "single_terminal")
+        path = os.path.join(SCREENSHOT_DIR, "qterminator_test_single_terminal.png")
+        # Re-grab until the rendered screenshot is a valid, non-trivial PNG,
+        # rather than sleeping a fixed 500ms and hoping rendering finished.
+        qtbot.waitUntil(
+            lambda: _is_valid_png(_save(window, "single_terminal")),
+            timeout=3000,
+        )
         assert os.path.exists(path)
-        # Window should have content (file size > trivial empty window)
+        # Non-trivial size AND a real PNG header (not a truncated/garbage file).
         assert os.path.getsize(path) > 5000
+        with open(path, "rb") as fh:
+            assert fh.read(8) == _PNG_MAGIC
 
     def test_menubar_hidden_by_default(self, window):
         assert not window.menuBar().isVisible()
@@ -77,9 +105,14 @@ class TestSingleTerminal:
 class TestSplits:
     def test_horizontal_split_renders(self, window, qtbot):
         window._split_horizontal()
-        qtbot.wait(300)
-        path = _save(window, "split_horizontal")
         split = window._tabs.widget(0)
+        # Wait for the second terminal to exist and be laid out with height.
+        qtbot.waitUntil(
+            lambda: len(split.find_terminals()) == 2
+            and all(t.height() > 0 for t in split.find_terminals()),
+            timeout=2000,
+        )
+        path = _save(window, "split_horizontal")
         terms = split.find_terminals()
         assert len(terms) == 2
         # Both should have nonzero height
@@ -88,9 +121,13 @@ class TestSplits:
 
     def test_vertical_split_renders(self, window, qtbot):
         window._split_vertical()
-        qtbot.wait(300)
-        path = _save(window, "split_vertical")
         split = window._tabs.widget(0)
+        qtbot.waitUntil(
+            lambda: len(split.find_terminals()) == 2
+            and all(t.width() > 0 for t in split.find_terminals()),
+            timeout=2000,
+        )
+        path = _save(window, "split_vertical")
         terms = split.find_terminals()
         assert len(terms) == 2
         # Both should have nonzero width
@@ -99,12 +136,12 @@ class TestSplits:
 
     def test_three_way_split(self, window, qtbot):
         """Split horiz then vert gives 3 terminals, all visible."""
-        window._split_horizontal()
-        qtbot.wait(100)
-        window._split_vertical()
-        qtbot.wait(300)
-        path = _save(window, "three_way_split")
         split = window._tabs.widget(0)
+        window._split_horizontal()
+        qtbot.waitUntil(lambda: len(split.find_terminals()) == 2, timeout=2000)
+        window._split_vertical()
+        qtbot.waitUntil(lambda: len(split.find_terminals()) == 3, timeout=2000)
+        path = _save(window, "three_way_split")
         terms = split.find_terminals()
         assert len(terms) == 3
 
@@ -112,40 +149,52 @@ class TestSplits:
 class TestTabs:
     def test_two_tabs_shows_bar(self, window, qtbot):
         window.new_tab()
-        qtbot.wait(200)
+        qtbot.waitUntil(
+            lambda: window._tabs.count() == 2 and window._tab_bar.isVisible(),
+            timeout=2000,
+        )
         path = _save(window, "two_tabs")
         assert window._tab_bar.isVisible()
         assert window._tabs.count() == 2
 
     def test_tab_switch(self, window, qtbot):
         window.new_tab()
-        qtbot.wait(100)
+        qtbot.waitUntil(lambda: window._tabs.count() == 2, timeout=2000)
         window._tabs.setCurrentIndex(0)
-        qtbot.wait(200)
+        qtbot.waitUntil(lambda: window._tabs.currentIndex() == 0, timeout=2000)
         path = _save(window, "tab_switch")
         assert window._tabs.currentIndex() == 0
 
 
 class TestZoom:
     def test_zoom_hides_others(self, window, qtbot):
-        window._split_horizontal()
-        qtbot.wait(200)
-        window._toggle_zoom()
-        qtbot.wait(200)
-        path = _save(window, "zoomed")
         split = window._tabs.widget(0)
+        window._split_horizontal()
+        qtbot.waitUntil(lambda: len(split.find_terminals()) == 2, timeout=2000)
+        window._toggle_zoom()
+        qtbot.waitUntil(
+            lambda: len([t for t in split.find_terminals() if t.isVisible()]) == 1,
+            timeout=2000,
+        )
+        path = _save(window, "zoomed")
         visible = [t for t in split.find_terminals() if t.isVisible()]
         assert len(visible) == 1
 
     def test_unzoom_restores(self, window, qtbot):
-        window._split_horizontal()
-        qtbot.wait(100)
-        window._toggle_zoom()
-        qtbot.wait(100)
-        window._toggle_zoom()
-        qtbot.wait(200)
-        path = _save(window, "unzoomed")
         split = window._tabs.widget(0)
+        window._split_horizontal()
+        qtbot.waitUntil(lambda: len(split.find_terminals()) == 2, timeout=2000)
+        window._toggle_zoom()
+        qtbot.waitUntil(
+            lambda: len([t for t in split.find_terminals() if t.isVisible()]) == 1,
+            timeout=2000,
+        )
+        window._toggle_zoom()
+        qtbot.waitUntil(
+            lambda: len([t for t in split.find_terminals() if t.isVisible()]) == 2,
+            timeout=2000,
+        )
+        path = _save(window, "unzoomed")
         visible = [t for t in split.find_terminals() if t.isVisible()]
         assert len(visible) == 2
 
@@ -155,7 +204,7 @@ class TestPreferences:
         dlg = PreferencesDialog(window)
         dlg.show()
         qtbot.waitExposed(dlg)
-        qtbot.wait(100)
+        qtbot.waitUntil(lambda: dlg._tab_widget.count() == 3, timeout=2000)
         path = _save(dlg, "preferences")
         assert dlg._tab_widget.count() == 3
         dlg.close()
@@ -165,7 +214,7 @@ class TestPreferences:
         dlg.show()
         qtbot.waitExposed(dlg)
         dlg._tab_widget.setCurrentIndex(1)
-        qtbot.wait(100)
+        qtbot.waitUntil(lambda: dlg._tab_widget.currentIndex() == 1, timeout=2000)
         path = _save(dlg, "preferences_behavior")
         dlg.close()
 
@@ -174,7 +223,7 @@ class TestPreferences:
         dlg.show()
         qtbot.waitExposed(dlg)
         dlg._tab_widget.setCurrentIndex(2)
-        qtbot.wait(100)
+        qtbot.waitUntil(lambda: dlg._tab_widget.currentIndex() == 2, timeout=2000)
         path = _save(dlg, "preferences_shortcuts")
         dlg.close()
 
@@ -186,7 +235,7 @@ class TestKeyboard:
         assert window._tabs.count() == 1
         QTest.keyClick(window, Qt.Key.Key_T,
                        Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier)
-        qtbot.wait(200)
+        qtbot.waitUntil(lambda: window._tabs.count() == 2, timeout=2000)
         assert window._tabs.count() == 2
 
     def test_ctrl_shift_o_split(self, window, qtbot):
@@ -194,7 +243,7 @@ class TestKeyboard:
         assert len(split.find_terminals()) == 1
         QTest.keyClick(window, Qt.Key.Key_O,
                        Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier)
-        qtbot.wait(200)
+        qtbot.waitUntil(lambda: len(split.find_terminals()) == 2, timeout=2000)
         assert len(split.find_terminals()) == 2
 
     def test_ctrl_shift_e_split(self, window, qtbot):
@@ -202,7 +251,7 @@ class TestKeyboard:
         assert len(split.find_terminals()) == 1
         QTest.keyClick(window, Qt.Key.Key_E,
                        Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier)
-        qtbot.wait(200)
+        qtbot.waitUntil(lambda: len(split.find_terminals()) == 2, timeout=2000)
         assert len(split.find_terminals()) == 2
 
 
@@ -262,7 +311,9 @@ class TestMainEntryPoint:
         geom = "1024x768"
         w, h = geom.split("x")
         win.resize(int(w), int(h))
-        qtbot.wait(100)
+        qtbot.waitUntil(
+            lambda: win.width() == 1024 and win.height() == 768, timeout=2000,
+        )
         assert win.width() == 1024
         assert win.height() == 768
         win.close()
@@ -298,7 +349,7 @@ class TestMainEntryPoint:
         qtbot.waitExposed(win)
         # The constructor already created one tab; add another with cwd
         win.new_tab(working_directory=str(tmp_path))
-        qtbot.wait(200)
+        qtbot.waitUntil(lambda: win._tabs.count() == 2, timeout=2000)
         assert win._tabs.count() == 2
         win.close()
 
@@ -347,7 +398,9 @@ class TestMainEntryPoint:
         win.show()
         qtbot.waitExposed(win)
         win.restore_window_state()
-        qtbot.wait(100)
+        qtbot.waitUntil(
+            lambda: win.width() == 1000 and win.height() == 700, timeout=2000,
+        )
         assert win.width() == 1000
         assert win.height() == 700
         win.close()
@@ -358,7 +411,9 @@ class TestMainEntryPoint:
         win.show()
         qtbot.waitExposed(win)
         win.restore_window_state()
-        qtbot.wait(100)
+        qtbot.waitUntil(
+            lambda: win.width() == 800 and win.height() == 500, timeout=2000,
+        )
         # Default is 800x500 per restore_window_state
         assert win.width() == 800
         assert win.height() == 500
@@ -372,11 +427,11 @@ class TestEditableTabBar:
         """Double-clicking a tab starts the rename editor."""
         # Need multiple tabs so the tab bar is visible
         window.new_tab()
-        qtbot.wait(100)
+        qtbot.waitUntil(lambda: window._tabs.count() == 2, timeout=2000)
         tab_bar = window._tab_bar
         rect = tab_bar.tabRect(0)
         QTest.mouseDClick(tab_bar, Qt.MouseButton.LeftButton, pos=rect.center())
-        qtbot.wait(100)
+        qtbot.waitUntil(lambda: tab_bar._editor is not None, timeout=2000)
         assert tab_bar._editor is not None
 
     def test_editor_text_matches_tab(self, window, qtbot):
@@ -385,14 +440,14 @@ class TestEditableTabBar:
         original_text = tab_bar.tabText(0)
         rect = tab_bar.tabRect(0)
         QTest.mouseDClick(tab_bar, Qt.MouseButton.LeftButton, pos=rect.center())
-        qtbot.wait(100)
+        qtbot.waitUntil(lambda: tab_bar._editor is not None, timeout=2000)
         assert tab_bar._editor.text() == original_text
 
     def test_finish_edit_changes_tab_text(self, window, qtbot):
         """Finishing the editor with text updates the tab name."""
         tab_bar = window._tab_bar
         tab_bar._start_edit(0)
-        qtbot.wait(50)
+        qtbot.waitUntil(lambda: tab_bar._editor is not None, timeout=2000)
         tab_bar._editor.setText("My Custom Tab")
         tab_bar._finish_edit()
         assert tab_bar.tabText(0) == "My Custom Tab"
@@ -402,7 +457,7 @@ class TestEditableTabBar:
         tab_bar = window._tab_bar
         original_text = tab_bar.tabText(0)
         tab_bar._start_edit(0)
-        qtbot.wait(50)
+        qtbot.waitUntil(lambda: tab_bar._editor is not None, timeout=2000)
         tab_bar._editor.setText("")
         tab_bar._finish_edit()
         assert tab_bar.tabText(0) == original_text
@@ -420,8 +475,9 @@ class TestEditableTabBar:
 
         tab_bar = window._tab_bar
         rect = tab_bar.tabRect(0)
+        # capture_exec runs synchronously when the menu is shown, so
+        # menu_actions is already populated on return -- no async wait needed.
         tab_bar._show_context_menu(rect.center())
-        qtbot.wait(50)
 
         assert "New Tab" in menu_actions
         assert "Rename Tab" in menu_actions
@@ -444,14 +500,14 @@ class TestEditableTabBar:
         tab_bar = window._tab_bar
         rect = tab_bar.tabRect(0)
         tab_bar._show_context_menu(rect.center())
-        qtbot.wait(200)
+        qtbot.waitUntil(lambda: window._tabs.count() == 2, timeout=2000)
         assert window._tabs.count() == 2
 
     def test_custom_name_stored_in_tab_data(self, window, qtbot):
         """Custom name from rename is stored in tabData."""
         tab_bar = window._tab_bar
         tab_bar._start_edit(0)
-        qtbot.wait(50)
+        qtbot.waitUntil(lambda: tab_bar._editor is not None, timeout=2000)
         tab_bar._editor.setText("Custom Name")
         tab_bar._finish_edit()
         assert tab_bar.tabData(0) == "Custom Name"
@@ -460,14 +516,15 @@ class TestEditableTabBar:
         """Tab with custom name is not overwritten by terminal title changes."""
         tab_bar = window._tab_bar
         tab_bar._start_edit(0)
-        qtbot.wait(50)
+        qtbot.waitUntil(lambda: tab_bar._editor is not None, timeout=2000)
         tab_bar._editor.setText("Pinned Name")
         tab_bar._finish_edit()
         assert tab_bar.tabText(0) == "Pinned Name"
 
-        # Simulate a terminal title change
+        # Simulate a terminal title change. _on_terminal_title_changed is a
+        # synchronous slot, so the tab text is already final on return -- no
+        # observable async signal to wait on; assert directly.
         window._on_terminal_title_changed("some new shell title")
-        qtbot.wait(50)
         assert tab_bar.tabText(0) == "Pinned Name"
 
 
@@ -483,7 +540,7 @@ class TestCloseEvent:
         for t in split.find_terminals():
             monkeypatch.setattr(t, "has_running_process", lambda: False)
         window.close()
-        qtbot.wait(100)
+        qtbot.waitUntil(lambda: len(saved) == 1, timeout=2000)
         assert len(saved) == 1
 
     def test_close_no_running_process_accepts(self, window, qtbot, monkeypatch):
@@ -547,34 +604,35 @@ class TestScrollback:
 
     def test_scroll_page_up_no_crash(self, window, qtbot):
         """Shift+PgUp (scroll page up) doesn't crash."""
-        qtbot.wait(200)
+        # _scroll_page_up is a synchronous slot with no observable completion
+        # signal; this is a pure no-crash smoke test, so we just call it and
+        # assert the window is still functional afterwards.
         window._scroll_page_up()
-        qtbot.wait(100)
-        # Window should still be functional
         assert window._tabs.count() == 1
 
     def test_scroll_page_down_no_crash(self, window, qtbot):
         """Shift+PgDown (scroll page down) doesn't crash."""
-        qtbot.wait(200)
+        # Synchronous no-crash smoke test (see test_scroll_page_up_no_crash).
         window._scroll_page_down()
-        qtbot.wait(100)
         assert window._tabs.count() == 1
 
     def test_scrollbar_toggle_applies_across_tabs(self, window, qtbot):
         """Toggling scrollbar off and on doesn't crash across multiple tabs."""
         window.new_tab()
         window._split_horizontal()
-        qtbot.wait(200)
+        qtbot.waitUntil(
+            lambda: window._tabs.count() == 2
+            and len(window._tabs.widget(1).find_terminals()) == 2,
+            timeout=2000,
+        )
 
-        # Toggle scrollbar off — should not crash
+        # Toggle scrollbar off then on — synchronous slots, no async signal;
+        # this is a no-crash smoke test.
         window._scrollbar_action.setChecked(False)
         window._toggle_scrollbar()
-        qtbot.wait(100)
 
-        # Toggle back on — should not crash
         window._scrollbar_action.setChecked(True)
         window._toggle_scrollbar()
-        qtbot.wait(100)
 
         # Verify all terminals still exist
         total = 0
