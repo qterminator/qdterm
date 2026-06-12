@@ -51,10 +51,9 @@ import re
 import shutil
 import subprocess
 import time
-from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from dataclasses import dataclass
 
-from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 
 from qterminator.config import Config
@@ -502,7 +501,7 @@ class TriggersPlugin(Plugin):
     def __init__(self):
         super().__init__()
         self._window = None
-        self._service: Optional[TriggersService] = None
+        self._service: TriggersService | None = None
         self._original_connect = None
 
     def activate(self, app_controller):

@@ -16,7 +16,6 @@ Configuration (config.toml):
     check_cpu = true
 """
 
-import os
 import re
 import time
 

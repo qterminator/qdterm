@@ -29,7 +29,7 @@ Event formats:
     {"event": "cwd_changed", "tab_id": 1234, "cwd": "/new/path"}
 """
 
-from typing import Callable, Dict, List, Optional, Set
+from collections.abc import Callable
 
 from qterminator.config import Config
 from qterminator.plugin import Plugin
@@ -60,9 +60,9 @@ class AgentEventChannel:
     def __init__(self, window, agent_control):
         self._window = window
         self._agent_control = agent_control
-        self._enabled_events: Set[str] = set()
+        self._enabled_events: set[str] = set()
 
-    def set_enabled_events(self, events: List[str]) -> None:
+    def set_enabled_events(self, events: list[str]) -> None:
         """Set which event types to publish."""
         self._enabled_events = set(events)
 
@@ -106,9 +106,9 @@ class AgentEventChannelPlugin(Plugin):
     def __init__(self):
         super().__init__()
         self._window = None
-        self._service: Optional[AgentEventChannel] = None
-        self._shell_int_sub: Optional[Callable] = None
-        self._trigger_sub: Optional[Callable] = None
+        self._service: AgentEventChannel | None = None
+        self._shell_int_sub: Callable | None = None
+        self._trigger_sub: Callable | None = None
 
     def activate(self, app_controller):
         cfg = Config()

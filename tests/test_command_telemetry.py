@@ -217,7 +217,7 @@ def test_proc_tree_sampler_missing_pid():
 def test_proc_tree_sampler_fallback_ppid_scan(tmp_path):
     """When /proc/<pid>/task/<pid>/children is missing, the sampler
     should fall back to scanning all /proc/*/stat for matching ppid."""
-    from qterminator.plugins.command_telemetry import _CLK_TCK, ProcTreeSampler
+    from qterminator.plugins.command_telemetry import ProcTreeSampler
 
     proc = tmp_path / "proc_no_children"
 
@@ -454,9 +454,9 @@ def test_service_jsonl_log_writes_one_line_per_command(terminal, tmp_path):
         shadow.feed(f"\x1b]133;D;{exit_code}\x1b\\")
 
     assert log_path.exists()
-    lines = [l for l in log_path.read_text().splitlines() if l.strip()]
+    lines = [line for line in log_path.read_text().splitlines() if line.strip()]
     assert len(lines) == 3
-    parsed = [json.loads(l) for l in lines]
+    parsed = [json.loads(line) for line in lines]
     assert [p["exit_status"] for p in parsed] == [0, 1, 0]
     # Each record carries telemetry fields.
     for p in parsed:
@@ -1670,7 +1670,6 @@ def test_tab_tracker_binary_cpu_accumulation(fake_proc, monkeypatch):
 
     from qterminator.plugins.command_telemetry import (
         _CLK_TCK,
-        ProcTreeSampler,
         _default_sampler,
         _TabTracker,
     )

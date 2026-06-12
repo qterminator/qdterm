@@ -30,7 +30,6 @@ import os
 import re
 import socket
 from dataclasses import dataclass
-from typing import Callable, List, Optional
 
 from PyQt6.QtCore import QTimer
 
@@ -38,7 +37,7 @@ from qterminator.config import Config
 from qterminator.plugin import Plugin
 
 
-def _read_proc_cmdline(pid: int) -> Optional[list[str]]:
+def _read_proc_cmdline(pid: int) -> list[str] | None:
     """Read ``/proc/<pid>/cmdline`` and return NUL-split argv, or None.
 
     Returns None for any failure (process gone, permission denied,
@@ -57,7 +56,7 @@ def _read_proc_cmdline(pid: int) -> Optional[list[str]]:
     return [p.decode("utf-8", errors="replace") for p in parts if p]
 
 
-def parse_ssh_host(argv: list[str]) -> Optional[str]:
+def parse_ssh_host(argv: list[str]) -> str | None:
     """Extract the destination host from an ssh argv.
 
     Accepts the conventional invocation forms:
@@ -104,15 +103,15 @@ def parse_ssh_host(argv: list[str]) -> Optional[str]:
 @dataclass
 class ProfileRule:
     """A single automatic profile switching rule."""
-    hostname_regex: Optional[str] = None
-    cwd_regex: Optional[str] = None
-    command_regex: Optional[str] = None
+    hostname_regex: str | None = None
+    cwd_regex: str | None = None
+    command_regex: str | None = None
     profile: str = ""
 
     # Compiled regexes (set after loading)
-    hostname_re: Optional[re.Pattern] = None
-    cwd_re: Optional[re.Pattern] = None
-    command_re: Optional[re.Pattern] = None
+    hostname_re: re.Pattern | None = None
+    cwd_re: re.Pattern | None = None
+    command_re: re.Pattern | None = None
 
     def compile(self):
         """Compile regex patterns."""
@@ -143,13 +142,13 @@ class TerminalProfileState:
     """Tracks the profile state for one terminal."""
     original_profile: str
     current_profile: str
-    applied_by_rule: Optional[str] = None
+    applied_by_rule: str | None = None
 
 
 class AutoProfileService:
     """Manages automatic profile switching for all terminals."""
 
-    def __init__(self, window, rules: List[ProfileRule]):
+    def __init__(self, window, rules: list[ProfileRule]):
         self._window = window
         self._rules = rules
         self._states: dict[int, TerminalProfileState] = {}
@@ -349,8 +348,8 @@ class AutoProfilePlugin(Plugin):
     def __init__(self):
         super().__init__()
         self._window = None
-        self._service: Optional[AutoProfileService] = None
-        self._rules: List[ProfileRule] = []
+        self._service: AutoProfileService | None = None
+        self._rules: list[ProfileRule] = []
         self._shell_int_sub = None
         self._original_connect = None
 

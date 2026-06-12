@@ -83,9 +83,9 @@ class DynamicProfilesPlugin(Plugin):
     def _load_profile_file(self, cfg: Config, filepath: str):
         """Load a single profile JSON file."""
         try:
-            with open(filepath, 'r') as f:
+            with open(filepath) as f:
                 data = json.load(f)
-        except (json.JSONDecodeError, IOError):
+        except (OSError, json.JSONDecodeError):
             return
 
         # Handle both single profile and array of profiles

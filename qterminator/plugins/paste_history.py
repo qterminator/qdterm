@@ -26,7 +26,6 @@ import os
 import re
 import tempfile
 from collections import deque
-from typing import Optional
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QKeySequence, QShortcut
@@ -36,7 +35,6 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QListWidget,
     QListWidgetItem,
-    QMessageBox,
     QPlainTextEdit,
     QPushButton,
     QVBoxLayout,
@@ -69,12 +67,12 @@ def looks_like_secret(text: str) -> bool:
     return False
 
 
-def load_history(path: Optional[str] = None) -> list[str]:
+def load_history(path: str | None = None) -> list[str]:
     path = path or _history_path()
     if not os.path.exists(path):
         return []
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             data = json.load(f)
     except (OSError, json.JSONDecodeError):
         return []
@@ -87,7 +85,7 @@ def load_history(path: Optional[str] = None) -> list[str]:
     return [e for e in entries if isinstance(e, str)]
 
 
-def save_history(entries: list[str], path: Optional[str] = None) -> None:
+def save_history(entries: list[str], path: str | None = None) -> None:
     """Atomic save: write to a sibling tmpfile and rename."""
     path = path or _history_path()
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -115,7 +113,7 @@ class PasteHistoryService:
     MAX_ENTRIES = 50
 
     def __init__(self, window, max_entries: int = MAX_ENTRIES,
-                 path: Optional[str] = None):
+                 path: str | None = None):
         self._window = window
         self._path = path or _history_path()
         self._max = max(1, int(max_entries))
@@ -203,7 +201,7 @@ class PasteHistoryDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Paste History")
         self._entries = entries
-        self._selected: Optional[str] = None
+        self._selected: str | None = None
         self._build_ui()
 
     def _build_ui(self):
@@ -250,7 +248,7 @@ class PasteHistoryDialog(QDialog):
         self._selected = item.data(Qt.ItemDataRole.UserRole)
         self.accept()
 
-    def selected(self) -> Optional[str]:
+    def selected(self) -> str | None:
         return self._selected
 
 
@@ -269,7 +267,7 @@ class PasteHistoryPlugin(MenuProvider):
     def __init__(self):
         super().__init__()
         self._window = None
-        self._service: Optional[PasteHistoryService] = None
+        self._service: PasteHistoryService | None = None
         self._shortcut = None
 
     def activate(self, app_controller):

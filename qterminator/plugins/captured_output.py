@@ -24,19 +24,15 @@ terminal-line mapping; the binding gap (`sendKeyEvent`/scroll-to-seq)
 is tracked in ``todo/qterm-*.md``.
 """
 
-import json
 import os
 import time
-from typing import Optional
 
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import (
     QDockWidget,
     QFileDialog,
     QHBoxLayout,
     QHeaderView,
-    QMenu,
     QMessageBox,
     QPushButton,
     QTabWidget,
@@ -83,7 +79,7 @@ class CapturedOutputService:
     def entries(self, sidebar: str) -> list[dict]:
         return list(self._entries.get(sidebar, []))
 
-    def clear(self, sidebar: Optional[str] = None) -> None:
+    def clear(self, sidebar: str | None = None) -> None:
         if sidebar is None:
             self._entries.clear()
         else:
@@ -147,7 +143,7 @@ class CapturedOutputService:
 
     # -- export --
 
-    def export_to_text(self, path: str, sidebar: Optional[str] = None) -> int:
+    def export_to_text(self, path: str, sidebar: str | None = None) -> int:
         """Dump entries to a text file. One match per line, prefixed
         with sidebar + tab_id. Returns the number of lines written."""
         targets = [sidebar] if sidebar else list(self._entries.keys())
@@ -303,8 +299,8 @@ class CapturedOutputPlugin(MenuProvider):
     def __init__(self):
         super().__init__()
         self._window = None
-        self._service: Optional[CapturedOutputService] = None
-        self._dock: Optional[CapturedOutputDock] = None
+        self._service: CapturedOutputService | None = None
+        self._dock: CapturedOutputDock | None = None
         # Subscriber callback we installed on triggers; held so we can
         # remove it on deactivate without depending on closure equality.
         self._triggers_sub = None
@@ -388,7 +384,7 @@ class CapturedOutputPlugin(MenuProvider):
 
     # -- public API used by tests --
 
-    def show_dock(self) -> Optional[CapturedOutputDock]:
+    def show_dock(self) -> CapturedOutputDock | None:
         if self._window is None or self._service is None:
             return None
         if self._dock is None:

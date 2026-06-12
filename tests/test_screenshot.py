@@ -1,6 +1,5 @@
 """Tests for the screenshot plugin."""
 
-import os
 
 import pytest
 from PyQt6.QtGui import QPixmap

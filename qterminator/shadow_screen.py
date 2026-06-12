@@ -31,7 +31,7 @@ state stays consistent.
 """
 
 import time
-from typing import Callable, Optional
+from collections.abc import Callable
 
 
 class ShadowScreen:

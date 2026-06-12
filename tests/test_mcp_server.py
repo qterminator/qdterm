@@ -10,7 +10,6 @@ Three layers:
 """
 
 import asyncio
-import base64
 import json
 import os
 import socket
@@ -21,7 +20,7 @@ import pytest
 
 mcp_pkg = pytest.importorskip("mcp")
 
-from qterminator.mcp_server import (
+from qterminator.mcp_server import (  # noqa: E402
     AgentControlClient,
     build_server,
     default_socket_path,
@@ -65,7 +64,7 @@ class FakeAgentServer:
                 threading.Thread(
                     target=self._serve, args=(c,), daemon=True,
                 ).start()
-            except socket.timeout:
+            except TimeoutError:
                 continue
             except OSError:
                 break

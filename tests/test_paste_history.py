@@ -1,6 +1,5 @@
 """Tests for the paste_history plugin."""
 
-import json
 import os
 
 import pytest
@@ -19,11 +18,10 @@ def fresh_config(tmp_path, monkeypatch):
     Config._instance = None
 
 
-from qterminator.plugins.paste_history import (
+from qterminator.plugins.paste_history import (  # noqa: E402
     PasteHistoryDialog,
     PasteHistoryPlugin,
     PasteHistoryService,
-    _history_path,
     load_history,
     looks_like_secret,
     save_history,

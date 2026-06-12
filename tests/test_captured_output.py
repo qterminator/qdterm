@@ -8,7 +8,6 @@ Layers:
     entries; the dock surfaces matches with the expected grouping.
 """
 
-import os
 import time
 
 import pytest
@@ -29,12 +28,11 @@ def fresh_config(tmp_path, monkeypatch):
     Config._instance = None
 
 
-from qterminator.plugins.captured_output import (
-    CapturedOutputDock,
+from qterminator.plugins.captured_output import (  # noqa: E402
     CapturedOutputPlugin,
     CapturedOutputService,
 )
-from qterminator.plugins.triggers import TriggerEvent
+from qterminator.plugins.triggers import TriggerEvent  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Service

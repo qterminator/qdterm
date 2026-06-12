@@ -64,10 +64,10 @@ SHORTCUT_CATEGORIES: list[tuple[str, list[str]]] = [
     ("Window", ["toggle_menubar"]),
 ]
 
-from QTermWidget import QTermWidget
+from QTermWidget import QTermWidget  # noqa: E402
 
-from qterminator.config import Config
-from qterminator.translation import _ as tr
+from qterminator.config import Config  # noqa: E402
+from qterminator.translation import _ as tr  # noqa: E402
 
 
 class _KeySequenceDelegate(QStyledItemDelegate):
@@ -675,7 +675,7 @@ class PreferencesDialog(QDialog):
 
         self._config.save()
 
-        from qterminator.theme import apply_theme, resolve_theme
+        from qterminator.theme import apply_theme
         app = QApplication.instance()
         if app:
             resolved = apply_theme(app, theme_mode)

@@ -11,10 +11,8 @@ import socket
 import struct
 import subprocess
 import threading
-import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Optional
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
@@ -26,7 +24,7 @@ from qterminator.plugin import MenuProvider
 _AUTHORIZED_KEYS_PATH = os.path.join(CONFIG_DIR, "authorized_keys")
 
 
-def _parse_ssh_ed25519_blob(blob: bytes) -> Optional[Ed25519PublicKey]:
+def _parse_ssh_ed25519_blob(blob: bytes) -> Ed25519PublicKey | None:
     """Validate and extract an Ed25519 public key from an SSH wire-format blob.
 
     The expected structure is:
@@ -67,7 +65,7 @@ def _load_authorized_keys(path: str) -> list[Ed25519PublicKey]:
     keys: list[Ed25519PublicKey] = []
     if not os.path.isfile(path):
         return keys
-    with open(path, "r", encoding="utf-8") as fh:
+    with open(path, encoding="utf-8") as fh:
         for line in fh:
             line = line.strip()
             if not line or line.startswith("#"):
@@ -225,7 +223,7 @@ def _recv_exact(sock: socket.socket, n: int) -> bytes:
     return bytes(buf)
 
 
-def _ws_recv_text(sock: socket.socket) -> Optional[str]:
+def _ws_recv_text(sock: socket.socket) -> str | None:
     first = _recv_exact(sock, 2)
     opcode = first[0] & 0x0F
     if opcode == 0x8:  # close
@@ -425,7 +423,7 @@ class _ShareHTTPServer(ThreadingHTTPServer):
 
     def __init__(self, addr, handler, share, *,
                  auth_required: bool = False,
-                 authorized_keys: Optional[list[Ed25519PublicKey]] = None):
+                 authorized_keys: list[Ed25519PublicKey] | None = None):
         super().__init__(addr, handler)
         self.share = share
         self.auth_required = auth_required
@@ -437,7 +435,7 @@ _LOOPBACK_BINDS = frozenset({"127.0.0.1", "::1", "localhost"})
 
 class TmuxWebShareService:
     def __init__(self, bind: str = "127.0.0.1", read_only: bool = True,
-                 authorized_keys_path: Optional[str] = None):
+                 authorized_keys_path: str | None = None):
         self.bind = bind
         self.authorized_keys_path = authorized_keys_path or _AUTHORIZED_KEYS_PATH
         self._auth_required = False
@@ -518,7 +516,7 @@ class TmuxWebSharePlugin(MenuProvider):
     def __init__(self):
         super().__init__()
         self._window = None
-        self._service: Optional[TmuxWebShareService] = None
+        self._service: TmuxWebShareService | None = None
 
     def activate(self, app_controller):
         self._window = app_controller

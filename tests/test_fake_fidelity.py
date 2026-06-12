@@ -63,7 +63,7 @@ if not (
         allow_module_level=True,
     )
 
-import QTermWidget
+import QTermWidget  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # The contract: QTermWidget methods the app calls on the underlying widget.

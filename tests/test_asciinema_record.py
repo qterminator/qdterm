@@ -14,7 +14,6 @@ Three layers:
 """
 
 import json
-import os
 import time
 
 import pytest
@@ -60,10 +59,10 @@ def registry():
 def _read_cast(path):
     """Read a cast file → (header_dict, list[event_tuple])."""
     with open(path) as f:
-        lines = [l for l in f if l.strip()]
+        lines = [line for line in f if line.strip()]
     assert lines, f"empty cast at {path}"
     header = json.loads(lines[0])
-    events = [json.loads(l) for l in lines[1:]]
+    events = [json.loads(line) for line in lines[1:]]
     return header, events
 
 
@@ -188,7 +187,7 @@ def test_replay_through_pyte_reconstructs_visible_screen(terminal, registry, tmp
     live_lines = live_snapshot["lines"]
     # Compare stripped to ignore trailing-space drift between pyte
     # instances of slightly different shapes.
-    assert [l.rstrip() for l in replay_lines] == [l.rstrip() for l in live_lines]
+    assert [line.rstrip() for line in replay_lines] == [line.rstrip() for line in live_lines]
 
 
 # ---------------------------------------------------------------------------
@@ -255,7 +254,7 @@ def test_partial_cast_is_still_parseable(terminal, registry, tmp_path):
     rec._file.flush()
     # Now read what's on disk: header + 2 events.
     with open(cast) as f:
-        lines = [l for l in f if l.strip()]
+        lines = [line for line in f if line.strip()]
     assert len(lines) == 3
     header = json.loads(lines[0])
     ev1 = json.loads(lines[1])

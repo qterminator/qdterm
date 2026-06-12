@@ -39,12 +39,11 @@ that read this service.
 
 from __future__ import annotations
 
-import os
 import re
 import time
 import urllib.parse
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable, Optional
 
 from qterminator.config import Config
 from qterminator.plugin import Plugin
@@ -56,15 +55,15 @@ from qterminator.plugin import Plugin
 @dataclass
 class CommandRecord:
     """One completed command in a tab's history."""
-    text: Optional[str]              # None when capture_command_text=False
-    exit_status: Optional[int]       # None if the ;D event omitted the code
+    text: str | None              # None when capture_command_text=False
+    exit_status: int | None       # None if the ;D event omitted the code
     started_at: float                # time.time() of ;B (command-start)
     finished_at: float               # time.time() of ;D (command-finish)
-    cwd: Optional[str]               # reported via OSC 7 at command start
+    cwd: str | None               # reported via OSC 7 at command start
     output_seq_range: tuple[int, int]  # ShadowScreen seq range [start,end]
     # Telemetry attached by the command_telemetry plugin after ;D; opaque
     # to shell_integration itself. ``None`` when the plugin isn't loaded.
-    telemetry: Optional[dict] = None
+    telemetry: dict | None = None
 
 
 @dataclass
@@ -79,18 +78,18 @@ class CommandStartEvent:
     """
     started_at: float                # time.time() at ;C
     started_at_monotonic: float      # time.monotonic() at ;C
-    cwd: Optional[str]
-    text: Optional[str]
+    cwd: str | None
+    text: str | None
 
 
 @dataclass
 class PendingCommand:
     """A command that has started but not yet finished."""
     text_chars: list[str] = field(default_factory=list)
-    started_at: Optional[float] = None
-    output_started_at: Optional[float] = None
-    cwd: Optional[str] = None
-    output_start_seq: Optional[int] = None
+    started_at: float | None = None
+    output_started_at: float | None = None
+    cwd: str | None = None
+    output_start_seq: int | None = None
 
 
 @dataclass
@@ -114,16 +113,16 @@ class CommandHistory:
     expected to be on the same thread (every other plugin is)."""
 
     def __init__(self, limit: int = 200):
-        self.cwd: Optional[str] = None
-        self.current_command: Optional[PendingCommand] = None
+        self.cwd: str | None = None
+        self.current_command: PendingCommand | None = None
         self.history: list[CommandRecord] = []
         self.hyperlinks: list[HyperlinkRange] = []
         # Open OSC-8 link, if any — closing ;; ST writes its end_seq.
-        self._open_link: Optional[HyperlinkRange] = None
+        self._open_link: HyperlinkRange | None = None
         self._limit = max(1, int(limit))
 
     @property
-    def last(self) -> Optional[CommandRecord]:
+    def last(self) -> CommandRecord | None:
         return self.history[-1] if self.history else None
 
     def _record(self, rec: CommandRecord) -> None:
@@ -142,7 +141,7 @@ class CommandHistory:
 _OSC_RE = re.compile(rb"\x1b\](.*?)(?:\x07|\x1b\\)", re.DOTALL)
 
 
-def _decode_file_uri(payload: str) -> Optional[str]:
+def _decode_file_uri(payload: str) -> str | None:
     """Turn ``file://host/path`` into a plain path. Returns None on junk."""
     try:
         u = urllib.parse.urlparse(payload)
@@ -176,8 +175,8 @@ class OSCParser:
 
     def __init__(self, history: CommandHistory,
                  capture_command_text: bool = False,
-                 on_command_finished: Optional[Callable[[CommandRecord], None]] = None,
-                 on_command_started: Optional[Callable[[CommandStartEvent], None]] = None):
+                 on_command_finished: Callable[[CommandRecord], None] | None = None,
+                 on_command_started: Callable[[CommandStartEvent], None] | None = None):
         self._history = history
         self._capture_text = capture_command_text
         self._carry = b""
@@ -298,7 +297,7 @@ class OSCParser:
             h.current_command.output_started_at = time.time()
             h.current_command.output_start_seq = seq
             if self._started_subscribers:
-                text: Optional[str] = None
+                text: str | None = None
                 if self._capture_text and h.current_command.text_chars:
                     text = "".join(h.current_command.text_chars).strip("\r\n")
                     if not text:
@@ -315,14 +314,14 @@ class OSCParser:
                     except Exception:
                         pass
         elif kind == "D":
-            exit_code: Optional[int] = None
+            exit_code: int | None = None
             if tail:
                 try:
                     exit_code = int(tail.split(";")[0])
                 except ValueError:
                     exit_code = None
             pending = h.current_command or PendingCommand(started_at=time.time())
-            text: Optional[str] = None
+            text: str | None = None
             if self._capture_text and pending.text_chars:
                 text = "".join(pending.text_chars).strip("\r\n")
                 if not text:
@@ -455,7 +454,7 @@ class ShellIntegrationService:
                 handle.release()
             self._states.pop(terminal_id, None)
 
-    def get_history(self, terminal) -> Optional[CommandHistory]:
+    def get_history(self, terminal) -> CommandHistory | None:
         state = self._states.get(id(terminal))
         return state[2] if state else None
 
@@ -499,7 +498,7 @@ class ShellIntegrationService:
 
     # -- agent_control surface helpers --
 
-    def serialize_last_command(self, terminal) -> Optional[dict]:
+    def serialize_last_command(self, terminal) -> dict | None:
         """Return ``last_command`` dict for ``agent_control.list_tabs``.
         Returns None if no commands have completed on this tab yet."""
         hist = self.get_history(terminal)
@@ -554,7 +553,7 @@ class ShellIntegrationPlugin(Plugin):
     def __init__(self):
         super().__init__()
         self._window = None
-        self._service: Optional[ShellIntegrationService] = None
+        self._service: ShellIntegrationService | None = None
 
     def activate(self, app_controller):
         cfg = Config()

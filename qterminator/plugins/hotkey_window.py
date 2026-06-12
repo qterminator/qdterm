@@ -21,11 +21,9 @@ Configuration (config.toml):
     hide_on_focus_lost = true    # currently advisory only
 """
 
-import os
 import sys
-from typing import Optional
 
-from PyQt6.QtGui import QKeySequence, QShortcut
+from PyQt6.QtGui import QShortcut
 
 from qterminator.config import Config
 from qterminator.plugin import Plugin
@@ -43,7 +41,7 @@ class HotkeyWindowPlugin(Plugin):
     def __init__(self):
         super().__init__()
         self._window = None
-        self._dropdown_window: Optional[object] = None
+        self._dropdown_window: object | None = None
         self._shortcut = None
 
     #: Class-level flag set by ``_create_dropdown_window`` so the
@@ -77,7 +75,6 @@ class HotkeyWindowPlugin(Plugin):
     def _setup_shortcut(self, app_controller):
         """Set up shortcut to toggle dropdown window."""
         try:
-            from PyQt6.QtCore import Qt
             from PyQt6.QtGui import QKeySequence
 
             cfg = Config()

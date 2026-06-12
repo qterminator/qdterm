@@ -16,7 +16,6 @@ and restores from it on startup if the file is fresh enough.
 import json
 import os
 import time
-from typing import Optional
 
 from qterminator import config as config_mod
 from qterminator.config import Config
@@ -118,9 +117,9 @@ class SessionRestorationPlugin(Plugin):
             return
 
         try:
-            with open(path, 'r') as f:
+            with open(path) as f:
                 session_data = json.load(f)
-        except (json.JSONDecodeError, IOError):
+        except (OSError, json.JSONDecodeError):
             return
 
         if not isinstance(session_data, dict):
@@ -233,7 +232,7 @@ class SessionRestorationPlugin(Plugin):
             with open(tmp, 'w') as f:
                 json.dump(session_data, f, indent=2)
             os.replace(tmp, path)
-        except (IOError, OSError):
+        except OSError:
             pass
 
     def deactivate(self):

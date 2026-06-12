@@ -19,7 +19,6 @@ Usage:
 """
 
 import time
-from typing import Optional
 
 try:
     import pyte
@@ -290,8 +289,8 @@ class InstantReplayPlugin(Plugin):
     def __init__(self):
         super().__init__()
         self._window = None
-        self._overlay: Optional[ReplayOverlay] = None
-        self._replay_state: Optional[ReplayState] = None
+        self._overlay: ReplayOverlay | None = None
+        self._replay_state: ReplayState | None = None
         self._shortcut = None
         self._event_filter = None
 

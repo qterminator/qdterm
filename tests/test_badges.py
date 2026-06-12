@@ -8,9 +8,6 @@ Layers:
     a shell_integration command_finished event.
 """
 
-import os
-import subprocess
-import time
 
 import pytest
 import qterminator.config as config_mod
@@ -30,10 +27,8 @@ def fresh_config(tmp_path, monkeypatch):
     Config._instance = None
 
 
-from qterminator.plugins.badges import (
+from qterminator.plugins.badges import (  # noqa: E402
     BadgesPlugin,
-    BadgesService,
-    _BadgeOverlay,
     _BranchCache,
     collect_context,
     hostname,
@@ -228,7 +223,7 @@ def test_plugin_refreshes_on_command_finished(qtbot):
     qtbot.wait(60)
     # Feed an OSC 133 ;A/;B/;C/;D;7 cycle so shell_integration records
     # an exit status, then assert the badge text reflects it.
-    for tid, overlay in win.badges.overlays.items():
+    for _tid, overlay in win.badges.overlays.items():
         # tid is id(terminal); we need the terminal object — pull from
         # the overlay's stored reference.
         terminal = overlay._terminal
@@ -258,8 +253,6 @@ def test_plugin_attaches_new_tabs(qtbot):
 
 def test_plugin_keypress_hides_overlay(qtbot):
     _set_profile_badge("{hostname}")
-    from PyQt6.QtCore import QEvent
-    from PyQt6.QtGui import QKeyEvent
     from qterminator.window import MainWindow
     win = MainWindow()
     win.resize(800, 400)

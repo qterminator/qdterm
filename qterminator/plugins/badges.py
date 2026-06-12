@@ -35,10 +35,9 @@ import shutil
 import socket
 import subprocess
 import time
-from typing import Optional
 
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QColor, QPalette
+from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import QLabel
 
 from qterminator.config import Config
@@ -48,7 +47,7 @@ from qterminator.plugin import Plugin
 # Template + variable resolution
 # ---------------------------------------------------------------------------
 
-_HOSTNAME_CACHE: Optional[str] = None
+_HOSTNAME_CACHE: str | None = None
 
 
 def hostname() -> str:
@@ -61,7 +60,7 @@ def hostname() -> str:
     return _HOSTNAME_CACHE
 
 
-def shorten_cwd(cwd: Optional[str]) -> str:
+def shorten_cwd(cwd: str | None) -> str:
     """Render ``cwd`` shell-style: ``~`` for HOME, full path otherwise."""
     if not cwd:
         return ""
@@ -84,7 +83,7 @@ class _BranchCache:
         self._ttl = ttl
         self._cache: dict[str, tuple[float, str]] = {}
 
-    def lookup(self, cwd: Optional[str]) -> str:
+    def lookup(self, cwd: str | None) -> str:
         if not cwd or not os.path.isdir(cwd):
             return ""
         now = time.monotonic()
@@ -275,7 +274,7 @@ class BadgesService:
     def branch_cache(self) -> _BranchCache:
         return self._branch_cache
 
-    def attach(self, terminal) -> Optional[_BadgeOverlay]:
+    def attach(self, terminal) -> _BadgeOverlay | None:
         tid = id(terminal)
         if tid in self._overlays:
             return self._overlays[tid]
@@ -381,7 +380,7 @@ class BadgesPlugin(Plugin):
     def __init__(self):
         super().__init__()
         self._window = None
-        self._service: Optional[BadgesService] = None
+        self._service: BadgesService | None = None
         self._original_connect = None
         self._shell_int_sub = None
 

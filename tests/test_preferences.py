@@ -2,14 +2,11 @@
 
 import pytest
 import qterminator.config as config_mod
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDoubleSpinBox,
     QFontComboBox,
-    QLabel,
     QSpinBox,
     QTabWidget,
 )

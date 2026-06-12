@@ -12,8 +12,6 @@ The test works by:
 
 import pytest
 import qterminator.config as config_mod
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QKeySequence
 from qterminator.config import Config
 from qterminator.window import MainWindow
 
@@ -306,7 +304,7 @@ class TestShortcutTabNavigation:
         _mark("move_tab_left", "move_tab_right")
 
     def test_switch_to_tab(self, window):
-        for i in range(3):
+        for _i in range(3):
             window.new_tab()
         for i in range(9):
             window._switch_to_tab(i)

@@ -1,6 +1,5 @@
 """Tests for terminal widget and split container (requires display)."""
 
-import os
 
 import pytest
 import qterminator.config as config_mod

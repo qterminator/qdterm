@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import os
 import sys
-from typing import Optional
 
 from PyQt6.QtCore import QTimer
 
@@ -34,7 +33,7 @@ APP_FRIENDLY_NAME = "QTerminator"
 APP_SUPPORTED_KINDS = ("text/*", "application/octet-stream")
 
 
-def maybe_install(window) -> Optional[object]:
+def maybe_install(window) -> object | None:
     """Register the running QTerminator on the session bus.
 
     Returns the AppReceiver (caller must keep a reference for the

@@ -373,7 +373,7 @@ def test_broadcast_event_delivers_to_attached(qtbot, rpc, plugin):
         try:
             rpc._s.settimeout(0.05)
             chunk = rpc._s.recv(4096)
-        except (BlockingIOError, socket.timeout):
+        except (TimeoutError, BlockingIOError):
             chunk = b""
         if chunk:
             rpc._buf += chunk
@@ -400,7 +400,7 @@ def test_broadcast_event_rejects_reserved_data_type(qtbot, rpc, plugin):
     rpc._s.settimeout(0.05)
     try:
         chunk = rpc._s.recv(4096)
-    except (BlockingIOError, socket.timeout):
+    except (TimeoutError, BlockingIOError):
         chunk = b""
     rpc._s.settimeout(None)
     # No matter what arrived (timing-dependent PTY traffic may have
@@ -435,7 +435,7 @@ def test_broadcast_event_drops_envelope_collisions(qtbot, rpc, plugin):
         try:
             rpc._s.settimeout(0.05)
             chunk = rpc._s.recv(4096)
-        except (BlockingIOError, socket.timeout):
+        except (TimeoutError, BlockingIOError):
             chunk = b""
         if chunk:
             rpc._buf += chunk

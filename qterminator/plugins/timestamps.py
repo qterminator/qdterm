@@ -13,11 +13,9 @@ Configuration (config.toml):
 """
 
 import time
-from typing import Optional
 
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QColor, QFont, QPainter, QTextCharFormat, QTextCursor
-from PyQt6.QtWidgets import QLabel, QToolTip, QWidget
+from PyQt6.QtGui import QColor, QFont, QPainter
+from PyQt6.QtWidgets import QWidget
 
 from qterminator.config import Config
 from qterminator.plugin import Plugin
@@ -222,7 +220,7 @@ class TimestampsPlugin(Plugin):
         # Release every per-terminal listener/handle before tearing
         # down state. Otherwise the ShadowScreenRegistry stays pinned
         # and the lambda closures keep self alive forever.
-        for tid, (handle, listener) in list(self._handles.items()):
+        for _tid, (handle, listener) in list(self._handles.items()):
             try:
                 handle.remove_listener(listener)
             except Exception:

@@ -271,7 +271,6 @@ class TestConfigLayoutSaveLoad:
         tab_dict = {"name": "Tab 1", "tree": {"type": "terminal", "working_directory": "/tmp", "group": None}}
         tab_str = json.dumps(tab_dict)
         # Verify the string gets parsed back to a dict
-        import ast
         parsed = json.loads(tab_str)
         assert parsed == tab_dict
 

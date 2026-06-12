@@ -9,7 +9,6 @@ parse a real binary's output.
 import os
 import shutil
 import subprocess
-from unittest.mock import patch
 
 import pytest
 import qterminator.config as config_mod

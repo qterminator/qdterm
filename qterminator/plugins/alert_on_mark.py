@@ -15,13 +15,12 @@ Trigger via:
 """
 
 import subprocess
-from typing import Callable, Optional
+from collections.abc import Callable
 
-from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QKeySequence, QShortcut
 
 from qterminator.config import Config
-from qterminator.plugin import MenuProvider, Plugin
+from qterminator.plugin import Plugin
 
 # ---------------------------------------------------------------------------
 # Service
@@ -121,8 +120,8 @@ class AlertOnMarkPlugin(Plugin):
     def __init__(self):
         super().__init__()
         self._window = None
-        self._service: Optional[AlertOnMarkService] = None
-        self._shell_int_sub: Optional[Callable] = None
+        self._service: AlertOnMarkService | None = None
+        self._shell_int_sub: Callable | None = None
 
     def activate(self, app_controller):
         cfg = Config()

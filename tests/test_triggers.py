@@ -11,9 +11,6 @@ Three layers:
 
 from __future__ import annotations
 
-import re
-import time
-
 import pytest
 import qterminator.config as config_mod
 from qterminator.config import Config
@@ -43,16 +40,14 @@ def terminal(qtbot):
     yield t
 
 
-from qterminator.plugins.triggers import (
-    BUILTIN_ACTIONS,
-    Rule,
+from qterminator.plugins.triggers import (  # noqa: E402
     TriggerEvent,
     TriggersPlugin,
     TriggersService,
     _resolve_template,
     load_rules,
 )
-from qterminator.shadow_screen import ShadowScreenRegistry
+from qterminator.shadow_screen import ShadowScreenRegistry  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # load_rules

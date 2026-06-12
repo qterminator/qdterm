@@ -11,7 +11,6 @@ import subprocess
 import tempfile
 import time
 from dataclasses import dataclass
-from typing import Optional
 
 from PyQt6.QtWidgets import QMessageBox
 
@@ -54,7 +53,7 @@ class SSHShare:
 
 class TmuxSSHShareService:
     def __init__(self, bind: str = "127.0.0.1",
-                 authorized_keys: Optional[str] = None):
+                 authorized_keys: str | None = None):
         self.bind = bind
         self.authorized_keys = os.path.expanduser(
             authorized_keys
@@ -171,7 +170,7 @@ class TmuxSSHSharePlugin(MenuProvider):
     def __init__(self):
         super().__init__()
         self._window = None
-        self._service: Optional[TmuxSSHShareService] = None
+        self._service: TmuxSSHShareService | None = None
 
     def activate(self, app_controller):
         self._window = app_controller

@@ -16,7 +16,6 @@ Configuration (config.toml):
     detach_on_close = true
 """
 
-import os
 import shutil
 import subprocess
 

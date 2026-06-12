@@ -3,7 +3,6 @@
 import pytest
 import qterminator.config as config_mod
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont
 from qterminator.config import Config
 from qterminator.splitter import SplitContainer
 from qterminator.window import MainWindow
@@ -1315,7 +1314,6 @@ class TestMenuBar:
 
     def test_ctrl_shift_m_shortcut_exists(self, window):
         """Ctrl+Shift+M shortcut is registered on the window."""
-        from PyQt6.QtGui import QKeySequence
         actions = window.actions()
         shortcuts = [a.shortcut().toString() for a in actions if a.shortcut()]
         assert "Ctrl+Shift+M" in shortcuts

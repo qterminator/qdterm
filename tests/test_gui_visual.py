@@ -23,12 +23,12 @@ def _is_valid_png(path, min_size=5000):
     with open(path, "rb") as fh:
         return fh.read(8) == _PNG_MAGIC
 
-import qterminator.config as config_mod
-from PyQt6.QtWidgets import QMessageBox
-from qterminator.config import Config
-from qterminator.preferences import PreferencesDialog
-from qterminator.theme import apply_dark_theme
-from qterminator.window import MainWindow
+import qterminator.config as config_mod  # noqa: E402
+from PyQt6.QtWidgets import QMessageBox  # noqa: E402
+from qterminator.config import Config  # noqa: E402
+from qterminator.preferences import PreferencesDialog  # noqa: E402
+from qterminator.theme import apply_dark_theme  # noqa: E402
+from qterminator.window import MainWindow  # noqa: E402
 
 SCREENSHOT_DIR = "/tmp"
 
@@ -285,7 +285,6 @@ class TestMenuBarToggle:
 
     def test_context_menu_has_show_menubar(self, window):
         """Window actions include menu bar toggle (Ctrl+Shift+M)."""
-        from PyQt6.QtGui import QKeySequence
         actions = window.actions()
         shortcuts = [a.shortcut().toString() for a in actions]
         assert "Ctrl+Shift+M" in shortcuts

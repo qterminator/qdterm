@@ -44,12 +44,10 @@ import json
 import logging
 import os
 import re
-import stat
 import subprocess
 import time
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Optional
 
 from PyQt6.QtCore import QTimer
 
@@ -78,15 +76,15 @@ class CommandTelemetry:
     read_bytes: int = 0
     write_bytes: int = 0
     cancelled_write_bytes: int = 0
-    binary_cpu_seconds: Optional[dict[str, float]] = None
+    binary_cpu_seconds: dict[str, float] | None = None
     process_tree_depth: int = 0
     process_tree_breadth: int = 0
-    network_connections: Optional[list[dict]] = None
-    open_files: Optional[list[str]] = None
-    cgroups: Optional[list[str]] = None
-    syscall_counts: Optional[dict[str, int]] = None
+    network_connections: list[dict] | None = None
+    open_files: list[str] | None = None
+    cgroups: list[str] | None = None
+    syscall_counts: dict[str, int] | None = None
     oom_score_max: int = 0
-    gpu: Optional[dict] = None
+    gpu: dict | None = None
 
     def to_dict(self) -> dict:
         out = {
@@ -589,15 +587,15 @@ class _TabTracker:
         self._collect_syscalls = collect_syscalls
         self._collect_oom = collect_oom
         self._files_limit = files_limit
-        self._timer: Optional[QTimer] = None
+        self._timer: QTimer | None = None
         self._reset()
         # Most recent finalized telemetry — exposed via
         # ``CommandTelemetryService.get_last_telemetry``.
-        self.last_telemetry: Optional[CommandTelemetry] = None
+        self.last_telemetry: CommandTelemetry | None = None
 
     def _reset(self) -> None:
-        self._started_at: Optional[float] = None
-        self._started_monotonic: Optional[float] = None
+        self._started_at: float | None = None
+        self._started_monotonic: float | None = None
         self._root_pid: int = 0
         self._cpu_last: float = 0.0
         self._peak_rss: int = 0
@@ -709,7 +707,7 @@ class _TabTracker:
                 pass
             self._timer = None
 
-    def on_finish(self) -> Optional[CommandTelemetry]:
+    def on_finish(self) -> CommandTelemetry | None:
         """Called from the ;D subscription. Returns the finalized
         telemetry (also cached on ``last_telemetry``) or None if we
         never saw a matching ;C."""
@@ -802,7 +800,7 @@ class CommandTelemetryService:
 
     def __init__(self, window, poll_interval_ms: int = 100,
                  display: str = "tab_status",
-                 log_path: Optional[str] = None,
+                 log_path: str | None = None,
                  tab_status_ms: int = 30_000,
                  collect_io_bytes: bool = True,
                  collect_binary_breakdown: bool = True,
@@ -833,7 +831,7 @@ class CommandTelemetryService:
         self._display = display
         self._tab_status_ms = tab_status_ms
         self._trackers: dict[int, _TabTracker] = {}
-        self._logger: Optional[_TelemetryLogger] = None
+        self._logger: _TelemetryLogger | None = None
         if log_path:
             try:
                 self._logger = _TelemetryLogger(log_path)
@@ -1021,7 +1019,7 @@ class CommandTelemetryService:
         """
         self._update_tab_status(terminal, tele)
 
-    def _fade_fire(self, terminal, timer: "QTimer") -> None:
+    def _fade_fire(self, terminal, timer: QTimer) -> None:
         """Bridge slot for fade timers: clear the title and drop the
         timer from the pending list so ``detach`` has nothing stale
         to stop."""
@@ -1063,7 +1061,7 @@ class CommandTelemetryService:
 
     # -- read API --
 
-    def get_last_telemetry(self, terminal) -> Optional[dict]:
+    def get_last_telemetry(self, terminal) -> dict | None:
         """Return the last command's telemetry dict for ``terminal``,
         or ``None`` if no command has completed yet."""
         tracker = self._trackers.get(id(terminal))
@@ -1118,7 +1116,7 @@ class CommandTelemetryPlugin(Plugin):
     def __init__(self):
         super().__init__()
         self._window = None
-        self._service: Optional[CommandTelemetryService] = None
+        self._service: CommandTelemetryService | None = None
 
     def activate(self, app_controller):
         cfg = Config()

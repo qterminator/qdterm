@@ -9,7 +9,6 @@ import urllib.request
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey,
-    Ed25519PublicKey,
 )
 from qterminator.plugins.tmux_ssh_share import SSHShare, TmuxSSHShareService
 from qterminator.plugins.tmux_web_share import (

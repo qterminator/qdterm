@@ -9,9 +9,7 @@ Three layers:
     plugin's service is on the window.
 """
 
-import base64
 import json
-import os
 import time
 
 import pytest
@@ -57,7 +55,7 @@ def osc(code: str, payload: str = "") -> bytes:
 # Pure parser
 # ---------------------------------------------------------------------------
 
-from qterminator.plugins.shell_integration import (
+from qterminator.plugins.shell_integration import (  # noqa: E402
     CommandHistory,
     CommandStartEvent,
     OSCParser,
@@ -332,7 +330,7 @@ def test_bel_terminator_also_accepted():
 # Service against a real ShadowScreenRegistry + TerminalWidget
 # ---------------------------------------------------------------------------
 
-from qterminator.shadow_screen import ShadowScreenRegistry
+from qterminator.shadow_screen import ShadowScreenRegistry  # noqa: E402
 
 
 def test_service_ensure_attached_is_idempotent(terminal):
@@ -624,12 +622,7 @@ def test_rpc_command_history_when_plugin_disabled(qtbot, window_with_agent_contr
 # Install-helper CLI
 # ---------------------------------------------------------------------------
 
-from qterminator.shell_integration_cli import (
-    HOOKS,
-    install,
-    print_hook,
-)
-from qterminator.shell_integration_cli import (
+from qterminator.shell_integration_cli import (  # noqa: E402
     main as cli_main,
 )
 

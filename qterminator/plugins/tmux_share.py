@@ -40,7 +40,6 @@ import shutil
 import socket
 import subprocess
 from functools import partial
-from typing import Optional
 
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import (
@@ -87,9 +86,9 @@ class Share:
     def __init__(self, session: str, bind: str):
         self.session = session
         self.bind = bind
-        self.port: Optional[int] = None
-        self.key: Optional[str] = None
-        self.server_pid: Optional[int] = None  # detached pid printed by mosh-server
+        self.port: int | None = None
+        self.key: str | None = None
+        self.server_pid: int | None = None  # detached pid printed by mosh-server
 
     @property
     def connect_string(self) -> str:
@@ -124,7 +123,7 @@ def _read_proc_cmdline(pid: int) -> list[str]:
     return [p.decode("utf-8", errors="replace") for p in raw.split(b"\0") if p]
 
 
-def _scan_mosh_server_pid(session: str, port: Optional[int] = None) -> Optional[int]:
+def _scan_mosh_server_pid(session: str, port: int | None = None) -> int | None:
     """Fallback when mosh-server omits the detached-pid banner."""
     try:
         entries = os.listdir("/proc")
@@ -192,7 +191,7 @@ class TmuxShareService:
         return _mosh_available()
 
     def share_session(self, session: str,
-                      tmux_socket: Optional[str] = None) -> Share:
+                      tmux_socket: str | None = None) -> Share:
         """Spawn a mosh-server attached to the named tmux session.
 
         ``tmux_socket`` is the ``-L`` socket name (optional). Returns
@@ -332,7 +331,7 @@ class _ShareDialog(QDialog):
         layout.addWidget(footer)
 
     @staticmethod
-    def _qr_pixmap(text: str) -> Optional[QPixmap]:
+    def _qr_pixmap(text: str) -> QPixmap | None:
         try:
             import qrcode
         except ImportError:
@@ -371,7 +370,7 @@ class TmuxSharePlugin(MenuProvider):
     def __init__(self):
         super().__init__()
         self._window = None
-        self._service: Optional[TmuxShareService] = None
+        self._service: TmuxShareService | None = None
         self._enabled = False
         self._show_qr = False
 

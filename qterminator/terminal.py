@@ -3,7 +3,7 @@
 import os
 
 from PyQt6.QtCore import QEvent, QObject, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QColor, QFont, QPalette
+from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import QApplication, QVBoxLayout, QWidget
 from QTermWidget import QTermWidget
 

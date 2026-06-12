@@ -34,7 +34,6 @@ import json
 import os
 import socket
 import struct
-from typing import Any, Optional
 
 from PyQt6.QtCore import QBuffer, QByteArray, QIODevice, QObject, QSocketNotifier
 
@@ -110,9 +109,9 @@ class _AgentServer(QObject):
         self._plugin = plugin
         self._window = window
         self._path = _socket_path()
-        self._sock: Optional[socket.socket] = None
-        self._notifier: Optional[QSocketNotifier] = None
-        self._clients: dict[int, "_Client"] = {}
+        self._sock: socket.socket | None = None
+        self._notifier: QSocketNotifier | None = None
+        self._clients: dict[int, _Client] = {}
 
     def start(self):
         try:
@@ -300,7 +299,7 @@ class AgentControlPlugin(Plugin):
     def __init__(self):
         super().__init__()
         self._window = None
-        self._server: Optional[_AgentServer] = None
+        self._server: _AgentServer | None = None
         # tab_id (id(terminal)) -> _AttachState. Present only for tabs that
         # at least one client has called attach() on.
         self.tab_states: dict[int, _AttachState] = {}
@@ -332,7 +331,7 @@ class AgentControlPlugin(Plugin):
     def deactivate(self):
         # Release all shadow handles. The registry drops the underlying
         # signal connection when the last consumer releases.
-        for tab_id, state in list(self.tab_states.items()):
+        for _tab_id, state in list(self.tab_states.items()):
             state.handle.remove_listener(state.listener)
             state.handle.release()
         self.tab_states.clear()
@@ -347,7 +346,7 @@ class AgentControlPlugin(Plugin):
                 pass
 
     @property
-    def socket_path(self) -> Optional[str]:
+    def socket_path(self) -> str | None:
         return self._server.socket_path if self._server else None
 
     def broadcast_event(self, tab_id: int, event_type: str, payload: dict) -> None:
@@ -594,7 +593,7 @@ class AgentControlPlugin(Plugin):
             "png_b64": bytes(ba.toBase64()).decode("ascii"),
         }
 
-    def rpc_open_tab(self, _client, working_directory: Optional[str] = None):
+    def rpc_open_tab(self, _client, working_directory: str | None = None):
         if not self._window:
             raise _RpcError(-32003, "no window")
         self._window.new_tab(working_directory=working_directory)
@@ -612,7 +611,7 @@ class AgentControlPlugin(Plugin):
         return recorder
 
     def rpc_start_recording(self, client, tab_id: int,
-                            path: Optional[str] = None,
+                            path: str | None = None,
                             capture_input: bool = False):
         if tab_id not in client.attached_tabs:
             raise _RpcError(-32001, "not attached")
@@ -629,7 +628,7 @@ class AgentControlPlugin(Plugin):
         }
 
     def rpc_stop_recording(self, client, tab_id: int,
-                           exit_status: Optional[int] = None):
+                           exit_status: int | None = None):
         if tab_id not in client.attached_tabs:
             raise _RpcError(-32001, "not attached")
         term_widget = self._get_terminal(tab_id)

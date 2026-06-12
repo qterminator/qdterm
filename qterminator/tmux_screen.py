@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import subprocess
 import time
-from typing import Callable
+from collections.abc import Callable
 
 from qterminator.shadow_screen import ShadowScreen
 

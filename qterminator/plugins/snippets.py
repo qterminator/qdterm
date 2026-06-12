@@ -28,14 +28,12 @@ trusted one-liners.
 import json
 import os
 import re
-from typing import Optional
 
-from PyQt6.QtGui import QAction, QKeySequence, QShortcut
+from PyQt6.QtGui import QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QDialog,
     QHBoxLayout,
     QInputDialog,
-    QLabel,
     QLineEdit,
     QListWidget,
     QListWidgetItem,
@@ -57,13 +55,13 @@ def _snippets_path() -> str:
     return os.path.join(_config_mod.CONFIG_DIR, "snippets.json")
 
 
-def load_snippets(path: Optional[str] = None) -> list[dict]:
+def load_snippets(path: str | None = None) -> list[dict]:
     """Load snippets from JSON. Malformed input returns []."""
     path = path or _snippets_path()
     if not os.path.exists(path):
         return []
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             data = json.load(f)
     except (OSError, json.JSONDecodeError):
         return []
@@ -89,7 +87,7 @@ def load_snippets(path: Optional[str] = None) -> list[dict]:
     return out
 
 
-def expand_placeholders(text: str, fill: callable) -> Optional[str]:
+def expand_placeholders(text: str, fill: callable) -> str | None:
     """Walk ``${N:label}`` markers and substitute via ``fill(label)``.
 
     ``fill`` is called once per *distinct* placeholder index, in
@@ -128,7 +126,7 @@ class SnippetPickerDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Snippets")
         self._snippets = snippets
-        self._selected: Optional[dict] = None
+        self._selected: dict | None = None
         self._build_ui()
         self._refilter("")
 
@@ -171,7 +169,7 @@ class SnippetPickerDialog(QDialog):
         self._selected = item.data(0x0100)
         self.accept()
 
-    def selected(self) -> Optional[dict]:
+    def selected(self) -> dict | None:
         return self._selected
 
 
@@ -233,7 +231,7 @@ class SnippetsPlugin(MenuProvider):
         super().__init__()
         self._window = None
         self._snippets: list[dict] = []
-        self._shortcut: Optional[QShortcut] = None
+        self._shortcut: QShortcut | None = None
 
     def activate(self, app_controller):
         self._window = app_controller

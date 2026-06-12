@@ -97,7 +97,7 @@ class TextTransformsPlugin(MenuProvider):
     @staticmethod
     def _epoch_to_date(text):
         ts = float(text.strip())
-        dt = datetime.datetime.fromtimestamp(ts, tz=datetime.timezone.utc)
+        dt = datetime.datetime.fromtimestamp(ts, tz=datetime.UTC)
         return dt.strftime("%Y-%m-%d %H:%M:%S UTC")
 
     @staticmethod

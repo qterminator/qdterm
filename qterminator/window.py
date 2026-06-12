@@ -9,13 +9,10 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QTabBar,
     QTabWidget,
-    QVBoxLayout,
-    QWidget,
 )
 
 from qterminator.config import Config
 from qterminator.splitter import SplitContainer
-from qterminator.terminal import TerminalWidget
 from qterminator.translation import _ as tr
 
 _QT_KEY_TO_ANSI = {

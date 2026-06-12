@@ -1,7 +1,6 @@
 """Tests for file_monitor plugin."""
 
 import os
-import time
 
 import pytest
 from qterminator import config as config_mod

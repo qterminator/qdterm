@@ -32,13 +32,11 @@ expects MCP servers to behave (start fast, fail noisily).
 """
 
 import argparse
-import base64
 import json
 import os
 import socket
-import sys
 import threading
-from typing import Any, Optional
+from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
@@ -53,7 +51,7 @@ class AgentControlClient:
 
     def __init__(self, socket_path: str):
         self._path = socket_path
-        self._conn: Optional[socket.socket] = None
+        self._conn: socket.socket | None = None
         self._buf = b""
         self._next_id = 1
         self._lock = threading.Lock()
@@ -128,7 +126,7 @@ class AgentControlClient:
 
 
 def build_server(client: AgentControlClient,
-                 mcp: Optional[FastMCP] = None) -> FastMCP:
+                 mcp: FastMCP | None = None) -> FastMCP:
     """Construct (or extend) a FastMCP instance with the QTerminator
     tools. Exposed as a function so tests can build a server with a
     mocked client and a private FastMCP instance."""
@@ -211,7 +209,7 @@ def build_server(client: AgentControlClient,
         return client.call("screenshot", tab_id=tab_id)
 
     @mcp.tool()
-    def open_tab(working_directory: Optional[str] = None) -> dict:
+    def open_tab(working_directory: str | None = None) -> dict:
         """Open a new tab. Returns ``{id}`` of the new tab. If
         QTerminator has tmux_mode enabled, the new tab will be
         tmux-backed automatically."""
@@ -224,7 +222,7 @@ def build_server(client: AgentControlClient,
 
     @mcp.tool()
     def start_recording(tab_id: int,
-                        path: Optional[str] = None,
+                        path: str | None = None,
                         capture_input: bool = False) -> dict:
         """Begin recording a tab to an asciicast v3 ``.cast`` file.
 
@@ -257,7 +255,7 @@ def build_server(client: AgentControlClient,
 
     @mcp.tool()
     def stop_recording(tab_id: int,
-                       exit_status: Optional[int] = None) -> dict:
+                       exit_status: int | None = None) -> dict:
         """Stop the active recording on a tab. Returns ``{path,
         bytes_written, event_count, duration}``. The cast file is
         flushed and closed; ``asciinema play <path>`` will replay it.

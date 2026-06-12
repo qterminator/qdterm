@@ -15,9 +15,7 @@ Configuration (config.toml):
 
 import time
 from dataclasses import dataclass
-from typing import Callable, List, Optional
 
-from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QKeySequence, QShortcut
 
 from qterminator.config import Config
@@ -33,7 +31,7 @@ class ClosedTab:
     working_directory: str
     profile: str
     tab_name: str
-    shell_command: Optional[List[str]] = None
+    shell_command: list[str] | None = None
     closed_at: float = 0.0
 
 
@@ -48,10 +46,10 @@ class UndoCloseService:
         self._window = window
         self._max_remembered = max_remembered
         self._window_seconds = window_seconds
-        self._closed_tabs: List[ClosedTab] = []
+        self._closed_tabs: list[ClosedTab] = []
 
     def record_close(self, working_directory: str, profile: str = "default",
-                     tab_name: str = "Terminal", shell_command: Optional[List[str]] = None):
+                     tab_name: str = "Terminal", shell_command: list[str] | None = None):
         """Record a tab close so it can be undone."""
         # Remove expired entries
         self._cleanup()
@@ -144,7 +142,7 @@ class UndoClosePlugin(Plugin):
     def __init__(self):
         super().__init__()
         self._window = None
-        self._service: Optional[UndoCloseService] = None
+        self._service: UndoCloseService | None = None
         self._shortcut = None
         self._original_close = None
 

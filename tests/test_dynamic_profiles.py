@@ -7,7 +7,6 @@ Layers:
 """
 
 import json
-import os
 
 import pytest
 import qterminator.config as config_mod

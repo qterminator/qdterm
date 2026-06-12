@@ -39,8 +39,6 @@ Configuration (config.toml):
 import os
 import shutil
 import subprocess
-import time
-from typing import Optional
 
 from PyQt6.QtCore import QTimer
 
@@ -88,7 +86,7 @@ class TmuxModeService:
     """
 
     def __init__(self, prefix: str = "qterm", enabled: bool = False,
-                 conf_path: Optional[str] = None):
+                 conf_path: str | None = None):
         self.prefix = prefix
         self.enabled = enabled
         self.conf_path = conf_path
@@ -107,7 +105,7 @@ class TmuxModeService:
         """Sessions whose names start with our prefix."""
         return [s for s in self.list_sessions() if s.startswith(self.prefix)]
 
-    def get_session_for_terminal(self, terminal) -> Optional[str]:
+    def get_session_for_terminal(self, terminal) -> str | None:
         """If the tab's root process is a tmux client, return its session."""
         if not _tmux_available():
             return None
@@ -155,7 +153,7 @@ class TmuxModeService:
             n += 1
         return f"{self.prefix}-{n}"
 
-    def shell_for_new_tab(self, session: Optional[str] = None) -> Optional[list]:
+    def shell_for_new_tab(self, session: str | None = None) -> list | None:
         """Return the argv to spawn for a new tab, or None if disabled."""
         if not self.enabled or not _tmux_available():
             return None
@@ -292,7 +290,7 @@ class TmuxModePlugin(MenuProvider):
 
     # -- actions --
 
-    def _open_tmux_tab(self, session: Optional[str] = None):
+    def _open_tmux_tab(self, session: str | None = None):
         if not self._window:
             return
         argv = self._service.shell_for_attach(

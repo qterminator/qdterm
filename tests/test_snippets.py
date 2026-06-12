@@ -25,7 +25,7 @@ def fresh_config(tmp_path, monkeypatch):
     Config._instance = None
 
 
-from qterminator.plugins.snippets import (
+from qterminator.plugins.snippets import (  # noqa: E402
     SnippetPickerDialog,
     SnippetsPlugin,
     _snippets_path,
@@ -126,7 +126,7 @@ def test_expand_placeholders_user_cancel_returns_none():
 
 
 def test_expand_placeholders_no_markers_passes_through():
-    assert expand_placeholders("just text\n", lambda l: "x") == "just text\n"
+    assert expand_placeholders("just text\n", lambda line: "x") == "just text\n"
 
 
 # ---------------------------------------------------------------------------

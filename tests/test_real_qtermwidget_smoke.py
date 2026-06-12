@@ -24,7 +24,6 @@ pass. On this CI host the lane therefore SKIPs cleanly, which is the expected
 and correct outcome; it only runs where the binding is genuinely present.
 """
 
-import os
 
 import pytest
 

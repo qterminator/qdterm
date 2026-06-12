@@ -28,8 +28,6 @@ import json
 import os
 import time
 from datetime import datetime
-from pathlib import Path
-from typing import Optional
 
 from PyQt6.QtWidgets import QFileDialog, QMessageBox
 
@@ -119,7 +117,7 @@ class Recording:
         self._cols, self._rows = cols, rows
         self._emit("r", f"{cols}x{rows}")
 
-    def close(self, exit_status: Optional[int] = None) -> str:
+    def close(self, exit_status: int | None = None) -> str:
         if self._closed:
             return self.path
         # Emit exit marker before closing — v3 'x' event.
@@ -146,13 +144,13 @@ class AsciinemaRecorderService:
     def is_recording(self, terminal) -> bool:
         return id(terminal) in self._active
 
-    def get_recording(self, terminal) -> Optional[Recording]:
+    def get_recording(self, terminal) -> Recording | None:
         return self._active.get(id(terminal))
 
     def active_recordings(self) -> list:
         return list(self._active.values())
 
-    def start(self, terminal, path: Optional[str] = None,
+    def start(self, terminal, path: str | None = None,
               capture_input: bool = False) -> Recording:
         """Start recording the terminal. Raises RuntimeError if already
         recording. Returns the live :class:`Recording`."""
@@ -209,7 +207,7 @@ class AsciinemaRecorderService:
         self._active[tid] = rec
         return rec
 
-    def stop(self, terminal, exit_status: Optional[int] = None) -> str:
+    def stop(self, terminal, exit_status: int | None = None) -> str:
         tid = id(terminal)
         rec = self._active.pop(tid, None)
         if rec is None:
@@ -246,7 +244,7 @@ class AsciinemaRecordPlugin(MenuProvider):
     def __init__(self):
         super().__init__()
         self._window = None
-        self._service: Optional[AsciinemaRecorderService] = None
+        self._service: AsciinemaRecorderService | None = None
         self._auto_record = False
 
     def activate(self, app_controller):
