@@ -56,7 +56,7 @@ class UndoCloseService:
         """Record a tab close so it can be undone."""
         # Remove expired entries
         self._cleanup()
-        
+
         # Add new closed tab
         record = ClosedTab(
             working_directory=working_directory,
@@ -65,9 +65,9 @@ class UndoCloseService:
             shell_command=shell_command,
             closed_at=time.monotonic(),
         )
-        
+
         self._closed_tabs.append(record)
-        
+
         # Trim to max
         while len(self._closed_tabs) > self._max_remembered:
             self._closed_tabs.pop(0)
@@ -75,13 +75,13 @@ class UndoCloseService:
     def undo(self) -> bool:
         """Restore the most recently closed tab. Returns True if restored."""
         self._cleanup()
-        
+
         if not self._closed_tabs:
             return False
-        
+
         # Get the most recent
         record = self._closed_tabs.pop()
-        
+
         # Re-spawn with the saved cwd and shell argv if we have one.
         # We can't restore the closed shell's state — just put the
         # user back at the same prompt location.
@@ -154,23 +154,23 @@ class UndoClosePlugin(Plugin):
         enabled = cfg.get("plugins", "undo_close", "enabled", default=False)
         if not enabled:
             return
-        
+
         self._window = app_controller
-        
+
         # Get config
         max_remembered = cfg.get("plugins", "undo_close", "max_remembered", default=10)
         window_seconds = cfg.get("plugins", "undo_close", "window_seconds", default=5.0)
-        
+
         # Create service
         self._service = UndoCloseService(app_controller, max_remembered, window_seconds)
-        
+
         # Install service on window
         if not hasattr(app_controller, "undo_close"):
             app_controller.undo_close = self._service
-        
+
         # Set up shortcut
         self._setup_shortcut(app_controller)
-        
+
         # Hook into tab close
         self._hook_tab_close(app_controller)
 
@@ -186,7 +186,7 @@ class UndoClosePlugin(Plugin):
             seq = QKeySequence.fromString(shortcut_str)
             if seq.isEmpty():
                 seq = QKeySequence("Ctrl+Alt+T")
-            
+
             self._shortcut = QShortcut(seq, app_controller)
             self._shortcut.activated.connect(lambda: self._undo())
         except Exception:
@@ -265,7 +265,7 @@ class UndoClosePlugin(Plugin):
         """Perform the undo action."""
         if self._service is None:
             return
-        
+
         if self._service.can_undo:
             success = self._service.undo()
             # Could show feedback if needed

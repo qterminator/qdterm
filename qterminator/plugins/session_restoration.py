@@ -67,11 +67,11 @@ class SessionRestorationPlugin(Plugin):
         )
         if not enabled:
             return
-        
+
         restore_on_start = cfg.get(
             "plugins", "session_restoration", "restore_on_start", default=True,
         )
-        
+
         self._window = app_controller
 
         if restore_on_start:

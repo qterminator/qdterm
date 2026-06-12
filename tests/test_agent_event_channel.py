@@ -52,10 +52,10 @@ def test_event_types_constants():
 
 class FakeAgentControl:
     """Fake agent_control for testing."""
-    
+
     def __init__(self):
         self.broadcast_calls = []
-    
+
     def broadcast_event(self, tab_id, event_type, payload):
         self.broadcast_calls.append({
             "tab_id": tab_id,
@@ -73,10 +73,10 @@ def test_service_set_enabled_events():
     win = FakeWindow()
     fake_agent = FakeAgentControl()
     service = AgentEventChannel(win, fake_agent)
-    
+
     events = ["command_finished", "trigger_match"]
     service.set_enabled_events(events)
-    
+
     assert service.is_event_enabled("command_finished")
     assert service.is_event_enabled("trigger_match")
     assert not service.is_event_enabled("cwd_changed")
@@ -87,11 +87,11 @@ def test_service_publish_when_enabled():
     win = FakeWindow()
     fake_agent = FakeAgentControl()
     service = AgentEventChannel(win, fake_agent)
-    
+
     service.set_enabled_events(["command_finished"])
-    
+
     service.publish(123, "command_finished", {"text": "make"})
-    
+
     assert len(fake_agent.broadcast_calls) == 1
     assert fake_agent.broadcast_calls[0]["tab_id"] == 123
     assert fake_agent.broadcast_calls[0]["event_type"] == "command_finished"
@@ -102,12 +102,12 @@ def test_service_ignores_disabled_events():
     win = FakeWindow()
     fake_agent = FakeAgentControl()
     service = AgentEventChannel(win, fake_agent)
-    
+
     service.set_enabled_events(["command_finished"])
-    
+
     # Try to publish a disabled event
     service.publish(123, "trigger_match", {"text": "error"})
-    
+
     assert len(fake_agent.broadcast_calls) == 0
 
 
@@ -115,9 +115,9 @@ def test_service_handles_no_agent_control():
     """Test graceful handling when agent_control is None."""
     win = FakeWindow()
     service = AgentEventChannel(win, None)
-    
+
     service.set_enabled_events(["command_finished"])
-    
+
     # Should not crash
     service.publish(123, "command_finished", {"text": "make"})
 
@@ -127,11 +127,11 @@ def test_service_default_events():
     win = FakeWindow()
     fake_agent = FakeAgentControl()
     service = AgentEventChannel(win, fake_agent)
-    
+
     # Set up default events (as the plugin does)
     default_events = ["command_finished", "trigger_match", "cwd_changed"]
     service.set_enabled_events(default_events)
-    
+
     assert service.is_event_enabled("command_finished")
     assert service.is_event_enabled("trigger_match")
     assert service.is_event_enabled("cwd_changed")
@@ -146,18 +146,18 @@ def test_plugin_activates_when_enabled():
     """Test plugin activates when enabled."""
     cfg = Config()
     cfg.set("plugins", "agent_event_channel", "enabled", True)
-    
+
     # Create a fake window with agent_control
     class FakeWin:
         _tabs = None
         agent_control = FakeAgentControl()
-    
+
     win = FakeWin()
     plugin = AgentEventChannelPlugin()
     plugin.activate(win)
-    
+
     assert plugin._service is not None
-    
+
     plugin.deactivate()
 
 
@@ -165,15 +165,15 @@ def test_plugin_no_agent_control_does_not_install():
     """Test plugin doesn't install when agent_control is missing."""
     cfg = Config()
     cfg.set("plugins", "agent_event_channel", "enabled", True)
-    
+
     class FakeWin:
         _tabs = None
         # No agent_control
-    
+
     win = FakeWin()
     plugin = AgentEventChannelPlugin()
     plugin.activate(win)
-    
+
     # Should not install service
     assert plugin._service is None
 
@@ -182,14 +182,14 @@ def test_plugin_disabled_does_not_install():
     """Test plugin doesn't install when disabled."""
     cfg = Config()
     cfg.set("plugins", "agent_event_channel", "enabled", False)
-    
+
     class FakeWin:
         pass
-    
+
     win = FakeWin()
     plugin = AgentEventChannelPlugin()
     plugin.activate(win)
-    
+
     assert plugin._window is None
 
 
@@ -198,19 +198,19 @@ def test_plugin_custom_events():
     cfg = Config()
     cfg.set("plugins", "agent_event_channel", "enabled", True)
     cfg.set("plugins", "agent_event_channel", "events", ["command_finished"])
-    
+
     class FakeWin:
         _tabs = None
         agent_control = FakeAgentControl()
-    
+
     win = FakeWin()
     plugin = AgentEventChannelPlugin()
     plugin.activate(win)
-    
+
     assert plugin._service is not None
     assert plugin._service.is_event_enabled("command_finished")
     assert not plugin._service.is_event_enabled("trigger_match")
-    
+
     plugin.deactivate()
 
 
@@ -218,17 +218,17 @@ def test_plugin_installs_service_on_window():
     """Test plugin installs service on window."""
     cfg = Config()
     cfg.set("plugins", "agent_event_channel", "enabled", True)
-    
+
     class FakeWin:
         _tabs = None
         agent_control = FakeAgentControl()
-    
+
     win = FakeWin()
     plugin = AgentEventChannelPlugin()
     plugin.activate(win)
-    
+
     assert hasattr(win, "agent_events")
-    
+
     plugin.deactivate()
 
 
@@ -236,17 +236,17 @@ def test_plugin_deactivate_cleans_up():
     """Test deactivate cleans up properly."""
     cfg = Config()
     cfg.set("plugins", "agent_event_channel", "enabled", True)
-    
+
     class FakeWin:
         _tabs = None
         agent_control = FakeAgentControl()
-    
+
     win = FakeWin()
     plugin = AgentEventChannelPlugin()
     plugin.activate(win)
-    
+
     plugin.deactivate()
-    
+
     assert plugin._window is None
     assert plugin._service is None
 
@@ -290,29 +290,29 @@ def test_plugin_subscribes_to_triggers():
     """Test plugin subscribes to triggers."""
     cfg = Config()
     cfg.set("plugins", "agent_event_channel", "enabled", True)
-    
+
     class FakeTrigger:
         def __init__(self):
             self._subscribers = []
-        
+
         def subscribe(self, cb):
             self._subscribers.append(cb)
-        
+
         def unsubscribe(self, cb):
             self._subscribers.remove(cb)
-    
+
     class FakeWin:
         _tabs = None
         triggers = FakeTrigger()
         agent_control = FakeAgentControl()
-    
+
     win = FakeWin()
     plugin = AgentEventChannelPlugin()
     plugin.activate(win)
-    
+
     # Should have subscribed
     assert len(win.triggers._subscribers) == 1
-    
+
     plugin.deactivate()
 
 
@@ -331,7 +331,7 @@ def test_service_publish_command_finished():
     fake_agent = FakeAgentControl()
     service = AgentEventChannel(win, fake_agent)
     service.set_enabled_events(["command_finished"])
-    
+
     # Fake command record
     class FakeRecord:
         text = "make"
@@ -339,7 +339,7 @@ def test_service_publish_command_finished():
         started_at = 1234567890.0
         finished_at = 1234567902.4
         cwd = "/home/user/project"
-    
+
     payload = {
         "command": {
             "text": FakeRecord.text,
@@ -349,9 +349,9 @@ def test_service_publish_command_finished():
         },
         "cwd": FakeRecord.cwd,
     }
-    
+
     service.publish(123, "command_finished", payload)
-    
+
     assert len(fake_agent.broadcast_calls) == 1
     assert fake_agent.broadcast_calls[0]["event_type"] == "command_finished"
 
@@ -362,7 +362,7 @@ def test_service_publish_trigger_match():
     fake_agent = FakeAgentControl()
     service = AgentEventChannel(win, fake_agent)
     service.set_enabled_events(["trigger_match"])
-    
+
     payload = {
         "rule_id": "errors",
         "pattern": "ERROR:",
@@ -370,9 +370,9 @@ def test_service_publish_trigger_match():
         "match": "ERROR:",
         "captured": {"file": "src/x.c", "lineno": 42},
     }
-    
+
     service.publish(123, "trigger_match", payload)
-    
+
     assert len(fake_agent.broadcast_calls) == 1
     assert fake_agent.broadcast_calls[0]["event_type"] == "trigger_match"
     assert fake_agent.broadcast_calls[0]["payload"]["captured"]["file"] == "src/x.c"

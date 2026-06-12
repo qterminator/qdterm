@@ -13,7 +13,7 @@ Configuration (config.toml):
     enabled = false                   # default false; opt-in
     events = ["command_finished", "trigger_match", "cwd_changed"]
                                       # default: all event types
-    
+
 This plugin works with agent_control. Events are only sent to agents
 that have attached to a tab. Agents can filter which events they receive.
 
@@ -21,11 +21,11 @@ Event formats:
     {"event": "command_finished", "tab_id": 1234,
      "command": {"text": "make", "exit_status": 0, "duration": 12.4,
                  "cwd": "/home/user/project"}}
-    
+
     {"event": "trigger_match", "tab_id": 1234,
      "rule_id": "errors", "line": "ERROR: build failed",
      "captured": {"file": "src/x.c", "lineno": 42}}
-    
+
     {"event": "cwd_changed", "tab_id": 1234, "cwd": "/new/path"}
 """
 
@@ -57,23 +57,23 @@ class EventTypes:
 
 class AgentEventChannel:
     """Service that publishes events to attached agents."""
-    
+
     def __init__(self, window, agent_control):
         self._window = window
         self._agent_control = agent_control
         self._enabled_events: Set[str] = set()
-        
+
     def set_enabled_events(self, events: List[str]) -> None:
         """Set which event types to publish."""
         self._enabled_events = set(events)
-    
+
     def is_event_enabled(self, event_type: str) -> bool:
         """Check if an event type is enabled."""
         return event_type in self._enabled_events
-    
+
     def publish(self, tab_id: int, event_type: str, payload: dict) -> None:
         """Publish an event to all agents attached to this tab.
-        
+
         Args:
             tab_id: The terminal/tab ID
             event_type: Event type (command_finished, trigger_match, cwd_changed)
@@ -81,10 +81,10 @@ class AgentEventChannel:
         """
         if not self.is_event_enabled(event_type):
             return
-        
+
         if self._agent_control is None:
             return
-        
+
         try:
             self._agent_control.broadcast_event(tab_id, event_type, payload)
         except Exception:
@@ -116,18 +116,18 @@ class AgentEventChannelPlugin(Plugin):
         enabled = cfg.get("plugins", "agent_event_channel", "enabled", default=False)
         if not enabled:
             return
-        
+
         self._window = app_controller
-        
+
         # Get agent_control plugin
         agent_control = getattr(app_controller, "agent_control", None)
         if agent_control is None:
             # agent_control not enabled, can't publish events
             return
-        
+
         # Create service
         self._service = AgentEventChannel(app_controller, agent_control)
-        
+
         # Load enabled events from config
         default_events = [
             EventTypes.COMMAND_FINISHED,
@@ -138,14 +138,14 @@ class AgentEventChannelPlugin(Plugin):
             "plugins", "agent_event_channel", "events", default=default_events
         )
         self._service.set_enabled_events(events)
-        
+
         # Expose service
         if not hasattr(app_controller, "agent_events"):
             app_controller.agent_events = self._service
-        
+
         # Subscribe to shell_integration events
         self._subscribe_shell_integration()
-        
+
         # Subscribe to trigger events
         self._subscribe_triggers()
 
@@ -176,10 +176,10 @@ class AgentEventChannelPlugin(Plugin):
         triggers = getattr(self._window, "triggers", None)
         if triggers is None:
             return
-        
+
         def on_trigger_match(event):
             self._on_trigger_match(event)
-        
+
         try:
             triggers.subscribe(on_trigger_match)
             self._trigger_sub = on_trigger_match
@@ -262,7 +262,7 @@ class AgentEventChannelPlugin(Plugin):
                 except Exception:
                     pass
             self._shell_int_sub = None
-        
+
         # Unsubscribe from triggers
         if self._trigger_sub is not None:
             triggers = getattr(self._window, "triggers", None)
@@ -272,7 +272,7 @@ class AgentEventChannelPlugin(Plugin):
                 except Exception:
                     pass
             self._trigger_sub = None
-        
+
         # Remove service from window
         if (self._window is not None
                 and getattr(self._window, "agent_events", None) is self._service):
@@ -280,6 +280,6 @@ class AgentEventChannelPlugin(Plugin):
                 del self._window.agent_events
             except AttributeError:
                 pass
-        
+
         self._service = None
         self._window = None

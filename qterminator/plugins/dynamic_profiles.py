@@ -9,7 +9,7 @@ Configuration (config.toml):
     profiles_dir = "~/.config/qterminator/profiles.d"  # default
 
 Each JSON file in profiles.d/ should define one or more profiles:
-    
+
     {
         "name": "my-profile",
         "font_family": "JetBrains Mono",
@@ -56,15 +56,15 @@ class DynamicProfilesPlugin(Plugin):
         enabled = cfg.get("plugins", "dynamic_profiles", "enabled", default=False)
         if not enabled:
             return
-        
+
         self._profiles_dir = os.path.expanduser(
             cfg.get("plugins", "dynamic_profiles", "profiles_dir",
                   default=_default_profiles_dir())
         )
-        
+
         # Load profiles
         self._load_profiles(cfg)
-        
+
         # Set up file watcher
         self._setup_watcher(cfg)
 
@@ -72,11 +72,11 @@ class DynamicProfilesPlugin(Plugin):
         """Load profiles from all JSON files in the directory."""
         if not os.path.isdir(self._profiles_dir):
             return
-        
+
         # Find all JSON files
         pattern = os.path.join(self._profiles_dir, "*.json")
         files = glob.glob(pattern)
-        
+
         for filepath in files:
             self._load_profile_file(cfg, filepath)
 
@@ -87,7 +87,7 @@ class DynamicProfilesPlugin(Plugin):
                 data = json.load(f)
         except (json.JSONDecodeError, IOError):
             return
-        
+
         # Handle both single profile and array of profiles
         if isinstance(data, list):
             profiles = data
@@ -95,7 +95,7 @@ class DynamicProfilesPlugin(Plugin):
             profiles = [data]
         else:
             return
-        
+
         for profile in profiles:
             self._merge_profile(cfg, profile)
 

@@ -60,10 +60,10 @@ class HotkeyWindowPlugin(Plugin):
             return
 
         self._window = app_controller
-        
+
         # Set up shortcut to toggle (Ctrl+Shift+D by default)
         self._setup_shortcut(app_controller)
-        
+
         # Check if we should start in dropdown mode (via CLI argument)
         if self._should_start_dropdown():
             self._create_dropdown_window()
@@ -79,18 +79,18 @@ class HotkeyWindowPlugin(Plugin):
         try:
             from PyQt6.QtGui import QKeySequence
             from PyQt6.QtCore import Qt
-            
+
             cfg = Config()
             shortcut_str = cfg.get(
                 "plugins", "hotkey_window", "shortcut",
                 default="Ctrl+Shift+D"
             )
-            
+
             # Use Qt's built-in parser
             seq = QKeySequence.fromString(shortcut_str)
             if seq.isEmpty():
                 seq = QKeySequence("Ctrl+Shift+D")
-            
+
             self._shortcut = QShortcut(seq, app_controller)
             self._shortcut.activated.connect(lambda: self.toggle())
         except Exception:
@@ -205,14 +205,14 @@ class HotkeyWindowPlugin(Plugin):
             except Exception:
                 pass
             self._dropdown_window = None
-        
+
         if self._shortcut is not None:
             try:
                 self._shortcut.deleteLater()
             except Exception:
                 pass
             self._shortcut = None
-        
+
         self._window = None
 
 

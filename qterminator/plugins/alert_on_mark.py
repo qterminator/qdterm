@@ -79,7 +79,7 @@ class AlertOnMarkService:
         """Send a desktop notification."""
         cfg = Config()
         sound = cfg.get("plugins", "alert_on_mark", "sound", default=True)
-        
+
         # Build notification body
         exit_info = ""
         if record.exit_status is not None:
@@ -87,7 +87,7 @@ class AlertOnMarkService:
                 exit_info = " (completed successfully)"
             else:
                 exit_info = f" (exit code: {record.exit_status})"
-        
+
         cmd_preview = ""
         if record.text:
             # Truncate long commands
@@ -95,9 +95,9 @@ class AlertOnMarkService:
             if len(cmd_text) > 50:
                 cmd_text = cmd_text[:47] + "..."
             cmd_preview = f"\nLast command: {cmd_text}"
-        
+
         body = f"Command finished in terminal{exit_info}{cmd_preview}"
-        
+
         try:
             cmd = ['notify-send', 'QTerminator', body]
             subprocess.Popen(
@@ -133,14 +133,14 @@ class AlertOnMarkPlugin(Plugin):
         enabled = cfg.get("plugins", "alert_on_mark", "enabled", default=False)
         if not enabled:
             return
-        
+
         self._window = app_controller
         self._service = AlertOnMarkService(app_controller)
-        
+
         # Expose service on window
         if not hasattr(app_controller, "alert_on_mark"):
             app_controller.alert_on_mark = self._service
-        
+
         # Subscribe to command finished events globally
         shell_int = getattr(app_controller, "shell_integration", None)
         if shell_int is not None:
@@ -148,7 +148,7 @@ class AlertOnMarkPlugin(Plugin):
                 self._service._on_command_finished(terminal, record)
             shell_int.subscribe_command_finished(global_callback)
             self._shell_int_sub = global_callback
-        
+
         # Set up keyboard shortcut for arming alert
         self._setup_shortcut(app_controller)
 
@@ -179,7 +179,7 @@ class AlertOnMarkPlugin(Plugin):
         focused = tabs.currentWidget()
         if focused is None:
             return
-        
+
         # Find terminal(s) in the focused widget
         for term in focused.find_terminals():
             self._service.arm(term)
@@ -195,7 +195,7 @@ class AlertOnMarkPlugin(Plugin):
                 except Exception:
                     pass
             self._shell_int_sub = None
-        
+
         # Remove service from window
         if (self._window is not None
                 and getattr(self._window, "alert_on_mark", None) is self._service):
@@ -203,7 +203,7 @@ class AlertOnMarkPlugin(Plugin):
                 del self._window.alert_on_mark
             except AttributeError:
                 pass
-        
+
         # Clean up shortcut
         if hasattr(self, '_shortcut') and self._shortcut is not None:
             try:
@@ -211,6 +211,6 @@ class AlertOnMarkPlugin(Plugin):
             except Exception:
                 pass
             self._shortcut = None
-        
+
         self._service = None
         self._window = None

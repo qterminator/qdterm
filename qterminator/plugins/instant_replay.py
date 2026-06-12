@@ -95,7 +95,7 @@ class ReplayState:
         """Rebuild pyte screen from chunks 0..up_to_index."""
         self._screen = pyte.Screen(self._cols, self._rows)
         self._stream = pyte.Stream(self._screen)
-        
+
         for i in range(up_to_index + 1):
             _, raw, _ = self._chunks[i]
             try:
@@ -108,17 +108,17 @@ class ReplayState:
         """Get the current replay screen as text."""
         if not self._chunks:
             return ""
-        
+
         if self._current_index < 0:
             self._current_index = 0
         if self._current_index >= len(self._chunks):
             self._current_index = len(self._chunks) - 1
-            
+
         self._rebuild_screen(self._current_index)
-        
+
         if self._screen is None:
             return ""
-        
+
         # Convert pyte display to text
         lines = self._screen.display
         return "\n".join("".join(lines[i]) for i in range(len(lines)))
@@ -206,7 +206,7 @@ class ReplayOverlay(QPlainTextEdit):
         self.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
-        
+
         # Style
         self.setStyleSheet(
             "QPlainTextEdit { "
@@ -217,10 +217,10 @@ class ReplayOverlay(QPlainTextEdit):
             "border: none; "
             "}"
         )
-        
+
         # Make it fill the parent
         self.setGeometry(parent.geometry())
-        
+
         # Status bar at bottom
         self._status_bar_height = 24
 
@@ -254,14 +254,14 @@ class ReplayOverlay(QPlainTextEdit):
         # Draw status bar in bottom margin
         from PyQt6.QtGui import QPainter, QColor, QFont
         from PyQt6.QtCore import QRect
-        
+
         painter = QPainter(self)
         painter.fillRect(
             0, self.height() - self._status_bar_height,
             self.width(), self._status_bar_height,
             QColor(20, 20, 20)
         )
-        
+
         painter.setPen(QColor("#888888"))
         font = QFont("monospace", 10)
         painter.setFont(font)
@@ -303,7 +303,7 @@ class InstantReplayPlugin(Plugin):
         enabled = cfg.get("plugins", "instant_replay", "enabled", default=False)
         if not enabled:
             return
-        
+
         self._window = app_controller
         self._setup_shortcut(app_controller)
 
@@ -315,12 +315,12 @@ class InstantReplayPlugin(Plugin):
                 "plugins", "instant_replay", "hotkey",
                 default="Ctrl+Shift+P"
             )
-            
+
             # Use Qt's built-in parser
             seq = QKeySequence.fromString(hotkey)
             if seq.isEmpty():
                 seq = QKeySequence("Ctrl+Shift+P")
-            
+
             shortcut = QShortcut(seq, app_controller)
             shortcut.activated.connect(lambda: self._enter_replay(app_controller))
             self._shortcut = shortcut
@@ -417,7 +417,7 @@ class InstantReplayPlugin(Plugin):
         """Update the overlay with current replay content."""
         if self._overlay is None or self._replay_state is None:
             return
-        
+
         text = self._replay_state.current_text()
         self._overlay.setPlainText(text)
         self._overlay.update_status(self._replay_state)
@@ -432,11 +432,11 @@ class InstantReplayPlugin(Plugin):
         """Handle a keypress during replay."""
         if self._replay_state is None:
             return False
-        
+
         key = event.key()
         modifiers = event.modifiers()
         handled = True
-        
+
         if key in (Qt.Key.Key_Escape, Qt.Key.Key_Return, Qt.Key.Key_Enter):
             self._exit_replay()
         elif key == Qt.Key.Key_Left:
@@ -459,17 +459,17 @@ class InstantReplayPlugin(Plugin):
             self._update_replay_display()
         else:
             handled = False
-        
+
         return handled
 
     def deactivate(self):
         self._exit_replay()
-        
+
         if self._shortcut is not None:
             try:
                 self._shortcut.deleteLater()
             except Exception:
                 pass
             self._shortcut = None
-        
+
         self._window = None

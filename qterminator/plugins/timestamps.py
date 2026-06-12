@@ -25,35 +25,35 @@ from qterminator.plugin import Plugin
 
 class TimestampMargin(QWidget):
     """Widget that displays timestamps in a margin."""
-    
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._timestamps = []  # list of (y_position, timestamp)
         self._line_height = 16
         self.setFixedWidth(80)
-        
+
     def set_line_height(self, height):
         self._line_height = height
-        
+
     def set_timestamps(self, timestamps):
         self._timestamps = timestamps
         self.update()
-        
+
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.fillRect(self.rect(), QColor(30, 30, 30))
-        
+
         painter.setPen(QColor(100, 100, 100))
         font = QFont("monospace", 9)
         painter.setFont(font)
-        
+
         for y_pos, ts in self._timestamps:
             # Convert timestamp to string
             try:
                 time_str = time.strftime("%H:%M:%S", time.localtime(ts))
             except (ValueError, OSError):
                 time_str = "--:--:--"
-            
+
             painter.drawText(4, y_pos + self._line_height - 2, time_str)
 
 
@@ -80,9 +80,9 @@ class TimestampsPlugin(Plugin):
         enabled = cfg.get("plugins", "timestamps", "enabled", default=False)
         if not enabled:
             return
-        
+
         self._window = app_controller
-        
+
         # Attach to existing terminals
         tabs = getattr(app_controller, "_tabs", None)
         if tabs is not None:
@@ -90,7 +90,7 @@ class TimestampsPlugin(Plugin):
                 split = tabs.widget(i)
                 for term in split.find_terminals():
                     self._attach_terminal(term)
-        
+
         # Wrap _connect_terminal for new terminals. Stash the original
         # so deactivate can restore it — otherwise toggling the plugin
         # off and on stacks wrappers and keeps the dead service alive.
@@ -179,20 +179,20 @@ class TimestampsPlugin(Plugin):
     def _update_margin(self, terminal):
         """Update the timestamp margin display."""
         tid = id(terminal)
-        
+
         if tid not in self._margins:
             return
-        
+
         margin = self._margins[tid]
         timestamps = self._timestamps.get(tid, [])
-        
+
         # Calculate positions
         positions = []
         line_height = self._line_height
         for i, ts in enumerate(timestamps):
             y_pos = i * line_height
             positions.append((y_pos, ts[1]))
-        
+
         margin.set_timestamps(positions)
 
     def detach_terminal(self, terminal):

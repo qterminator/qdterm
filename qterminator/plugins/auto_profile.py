@@ -8,16 +8,16 @@ Configuration (config.toml):
     [plugins.auto_profile]
     enabled = false                   # default false (opt-in)
     poll_interval_ms = 2000          # check for SSH every 2s
-    
+
     # Rules are checked in order; first match wins
     [[plugins.auto_profile.rules]]
     hostname_regex = "^prod-"
     profile = "prod"
-    
+
     [[plugins.auto_profile.rules]]
     cwd_regex = "^/etc/(nixos|qdistro)"
     profile = "system"
-    
+
     [[plugins.auto_profile.rules]]
     command_regex = "^sudo\\s+"
     profile = "sudo"
@@ -108,12 +108,12 @@ class ProfileRule:
     cwd_regex: Optional[str] = None
     command_regex: Optional[str] = None
     profile: str = ""
-    
+
     # Compiled regexes (set after loading)
     hostname_re: Optional[re.Pattern] = None
     cwd_re: Optional[re.Pattern] = None
     command_re: Optional[re.Pattern] = None
-    
+
     def compile(self):
         """Compile regex patterns."""
         if self.hostname_regex:
@@ -122,7 +122,7 @@ class ProfileRule:
             self.cwd_re = re.compile(self.cwd_regex)
         if self.command_regex:
             self.command_re = re.compile(self.command_regex)
-    
+
     def matches(self, hostname: str, cwd: str, command: str) -> bool:
         """Check if this rule matches the given context."""
         if self.hostname_re and not self.hostname_re.search(hostname):
@@ -186,10 +186,10 @@ class AutoProfileService:
         tid = id(terminal)
         if tid in self._states:
             return
-        
+
         # Get current profile
         profile_name = getattr(terminal, "_profile_name", "default") or "default"
-        
+
         self._states[tid] = TerminalProfileState(
             original_profile=profile_name,
             current_profile=profile_name,
@@ -200,21 +200,21 @@ class AutoProfileService:
         tid = id(terminal)
         if tid not in self._states:
             return
-        
+
         state = self._states[tid]
-        
+
         # Get context
         hostname = self._get_effective_hostname(terminal)
         cwd = record.cwd or ""
         command = record.text or ""
-        
+
         # Check each rule in order (first match wins)
         matched_rule = None
         for rule in self._rules:
             if rule.matches(hostname, cwd, command):
                 matched_rule = rule
                 break
-        
+
         if matched_rule:
             target_profile = matched_rule.profile
             if state.current_profile != target_profile:
@@ -238,30 +238,30 @@ class AutoProfileService:
         tid = id(terminal)
         if tid not in self._states:
             return
-        
+
         state = self._states[tid]
-        
+
         shell_int = getattr(self._window, "shell_integration", None)
         if shell_int is None:
             return
-        
+
         history = shell_int.get_history(terminal)
         if history is None:
             return
-        
+
         hostname = self._get_effective_hostname(terminal)
         cwd = history.cwd or ""
-        
+
         command = ""
         if history.last and history.last.text:
             command = history.last.text
-        
+
         matched_rule = None
         for rule in self._rules:
             if rule.matches(hostname, cwd, command):
                 matched_rule = rule
                 break
-        
+
         if matched_rule:
             target_profile = matched_rule.profile
             if state.current_profile != target_profile:
@@ -284,7 +284,7 @@ class AutoProfileService:
         """Detach from a terminal."""
         tid = id(terminal)
         state = self._states.pop(tid, None)
-        
+
         if state and state.current_profile != state.original_profile:
             try:
                 terminal.apply_profile(state.original_profile)
@@ -295,7 +295,7 @@ class AutoProfileService:
         """Start polling for SSH changes."""
         cfg = Config()
         interval = cfg.get("plugins", "auto_profile", "poll_interval_ms", default=2000)
-        
+
         self._poll_timer.timeout.connect(self._poll_all)
         self._poll_timer.start(interval)
 
@@ -359,22 +359,22 @@ class AutoProfilePlugin(Plugin):
         enabled = cfg.get("plugins", "auto_profile", "enabled", default=False)
         if not enabled:
             return
-        
+
         self._window = app_controller
-        
+
         # Load rules from config
         self._load_rules(cfg)
-        
+
         if not self._rules:
             return
-        
+
         # Create service
         self._service = AutoProfileService(app_controller, self._rules)
-        
+
         # Expose service
         if not hasattr(app_controller, "auto_profile"):
             app_controller.auto_profile = self._service
-        
+
         # Attach existing terminals to our state map AND to
         # shell_integration. ``subscribe_command_finished`` only
         # fans out for terminals where ``ensure_attached`` has been
@@ -421,7 +421,7 @@ class AutoProfilePlugin(Plugin):
                     except Exception:
                         pass
             app_controller._connect_terminal = wrapped
-        
+
         # Start polling
         self._service.start_polling()
 
@@ -485,7 +485,7 @@ class AutoProfilePlugin(Plugin):
                 except Exception:
                     pass
             self._shell_int_sub = None
-        
+
         # Restore original _connect_terminal
         if self._original_connect is not None and self._window is not None:
             try:
@@ -493,7 +493,7 @@ class AutoProfilePlugin(Plugin):
             except AttributeError:
                 pass
         self._original_connect = None
-        
+
         # Remove service from window
         if (self._window is not None
                 and getattr(self._window, "auto_profile", None) is self._service):
@@ -501,6 +501,6 @@ class AutoProfilePlugin(Plugin):
                 del self._window.auto_profile
             except AttributeError:
                 pass
-        
+
         self._service = None
         self._window = None
