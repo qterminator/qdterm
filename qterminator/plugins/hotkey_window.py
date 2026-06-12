@@ -82,7 +82,7 @@ class HotkeyWindowPlugin(Plugin):
             
             cfg = Config()
             shortcut_str = cfg.get(
-                "plugins", "hotkey_window", "shortcut", 
+                "plugins", "hotkey_window", "shortcut",
                 default="Ctrl+Shift+D"
             )
             

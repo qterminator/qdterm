@@ -274,7 +274,7 @@ class AgentEventChannelPlugin(Plugin):
             self._trigger_sub = None
         
         # Remove service from window
-        if (self._window is not None 
+        if (self._window is not None
                 and getattr(self._window, "agent_events", None) is self._service):
             try:
                 del self._window.agent_events

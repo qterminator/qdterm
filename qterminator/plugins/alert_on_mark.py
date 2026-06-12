@@ -197,7 +197,7 @@ class AlertOnMarkPlugin(Plugin):
             self._shell_int_sub = None
         
         # Remove service from window
-        if (self._window is not None 
+        if (self._window is not None
                 and getattr(self._window, "alert_on_mark", None) is self._service):
             try:
                 del self._window.alert_on_mark

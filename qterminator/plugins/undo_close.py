@@ -51,7 +51,7 @@ class UndoCloseService:
         self._window_seconds = window_seconds
         self._closed_tabs: List[ClosedTab] = []
 
-    def record_close(self, working_directory: str, profile: str = "default", 
+    def record_close(self, working_directory: str, profile: str = "default",
                      tab_name: str = "Terminal", shell_command: Optional[List[str]] = None):
         """Record a tab close so it can be undone."""
         # Remove expired entries

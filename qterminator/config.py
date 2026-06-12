@@ -48,7 +48,6 @@ DEFAULTS = {
             "show_titlebar": True,
             "copy_on_selection": False,
             "exit_action": "close",  # close, restart, hold
-            "visible_bell": False,
         },
     },
     "keybindings": {
