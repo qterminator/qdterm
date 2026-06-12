@@ -41,8 +41,6 @@ def fresh_config(tmp_path, monkeypatch):
 
 def test_save_session_creates_file(tmp_path):
     """Test that save_session creates the session file."""
-    from qterminator.plugins.session_restoration import SESSION_FILE
-
     # Create a fake window with tabs
     class FakeSplit:
         def find_terminals(self):
@@ -99,10 +97,6 @@ def test_save_session_uses_serialize_layout_round_trip(qtbot, tmp_path):
     new contract (per-tab tree, profile, optional tmux) is only
     meaningfully testable end-to-end.
     """
-    from qterminator.plugins.session_restoration import (
-        SESSION_FILE,
-        SessionRestorationPlugin,
-    )
     from qterminator.window import MainWindow
 
     cfg = Config()
@@ -135,8 +129,6 @@ def test_save_session_uses_serialize_layout_round_trip(qtbot, tmp_path):
 
 def test_restore_skips_old_session(tmp_path):
     """Test that old sessions are not restored."""
-    from qterminator.plugins.session_restoration import SESSION_FILE
-
     # Create a stale session file (older than max_age_days)
     old_time = time.time() - (10 * 24 * 3600)  # 10 days old
 
@@ -201,8 +193,6 @@ def test_restore_skips_missing_file():
 
 def test_restore_skips_invalid_json():
     """Test that invalid JSON is handled gracefully."""
-    from qterminator.plugins.session_restoration import SESSION_FILE
-
     # Write invalid JSON
     with open(SESSION_FILE, 'w') as f:
         f.write("not valid json {{{")

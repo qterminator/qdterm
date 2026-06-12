@@ -4,6 +4,7 @@ import os
 import re
 
 import pytest
+from qterminator import config as config_mod
 from qterminator.config import Config
 from qterminator.plugin import (
     MenuProvider,
@@ -12,8 +13,6 @@ from qterminator.plugin import (
     PluginManager,
     URLHandler,
 )
-
-from qterminator import config as config_mod
 
 # ---------------------------------------------------------------------------
 # Fixtures

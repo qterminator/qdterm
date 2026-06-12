@@ -215,7 +215,6 @@ def test_plugin_picker_routes_through_paste_clipboard(qtbot, monkeypatch):
     """Selecting an entry should call terminal.paste_clipboard with
     the chosen text already on the system clipboard."""
     from PyQt6.QtWidgets import QApplication, QDialog
-    from qterminator.plugins.paste_history import PasteHistoryDialog
     from qterminator.window import MainWindow
     win = MainWindow()
     win.resize(800, 400)

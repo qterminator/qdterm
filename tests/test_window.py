@@ -278,7 +278,6 @@ def test_rotate_splits(window):
     """Rotating splits changes orientation."""
     window._split_horizontal()
     split = window._tabs.widget(0)
-    from PyQt6.QtCore import Qt
     orig = split.orientation()
     window._rotate_splits()
     assert split.orientation() != orig
@@ -1434,7 +1433,7 @@ class TestBroadcastKeyForwarding:
     def test_broadcast_forwards_send_text_not_send_key_event(self, window, monkeypatch):
         """Live QTermWidget bindings do not expose sendKeyEvent; broadcast
         should translate keys and use TerminalWidget.send_text."""
-        from PyQt6.QtCore import QEvent, Qt
+        from PyQt6.QtCore import QEvent
         from PyQt6.QtGui import QKeyEvent
 
         window._split_horizontal()
@@ -1456,7 +1455,7 @@ class TestBroadcastKeyForwarding:
         assert sent == ["a"]
 
     def test_broadcast_translates_special_key(self, window, monkeypatch):
-        from PyQt6.QtCore import QEvent, Qt
+        from PyQt6.QtCore import QEvent
         from PyQt6.QtGui import QKeyEvent
 
         window._split_horizontal()
@@ -1649,7 +1648,7 @@ class TestBroadcastKeyTranslation:
 
     def test_ctrl_a_produces_soh(self):
         """Ctrl+A produces \\x01 (SOH)."""
-        from PyQt6.QtCore import QEvent, Qt
+        from PyQt6.QtCore import QEvent
         from PyQt6.QtGui import QKeyEvent
         from qterminator.window import _qkey_to_text
 
@@ -1662,7 +1661,7 @@ class TestBroadcastKeyTranslation:
 
     def test_ctrl_c_produces_etx(self):
         """Ctrl+C produces \\x03 (ETX)."""
-        from PyQt6.QtCore import QEvent, Qt
+        from PyQt6.QtCore import QEvent
         from PyQt6.QtGui import QKeyEvent
         from qterminator.window import _qkey_to_text
 
@@ -1675,7 +1674,7 @@ class TestBroadcastKeyTranslation:
 
     def test_ctrl_z_produces_sub(self):
         """Ctrl+Z produces \\x1a (SUB)."""
-        from PyQt6.QtCore import QEvent, Qt
+        from PyQt6.QtCore import QEvent
         from PyQt6.QtGui import QKeyEvent
         from qterminator.window import _qkey_to_text
 
@@ -1688,7 +1687,7 @@ class TestBroadcastKeyTranslation:
 
     def test_ctrl_bracket_left_produces_esc(self):
         """Ctrl+[ produces \\x1b (ESC)."""
-        from PyQt6.QtCore import QEvent, Qt
+        from PyQt6.QtCore import QEvent
         from PyQt6.QtGui import QKeyEvent
         from qterminator.window import _qkey_to_text
 
@@ -1701,7 +1700,7 @@ class TestBroadcastKeyTranslation:
 
     def test_f1_produces_ss3_p(self):
         """F1 key produces \\x1bOP."""
-        from PyQt6.QtCore import QEvent, Qt
+        from PyQt6.QtCore import QEvent
         from PyQt6.QtGui import QKeyEvent
         from qterminator.window import _qkey_to_text
 
@@ -1714,7 +1713,7 @@ class TestBroadcastKeyTranslation:
 
     def test_f12_produces_csi_24_tilde(self):
         """F12 key produces \\x1b[24~."""
-        from PyQt6.QtCore import QEvent, Qt
+        from PyQt6.QtCore import QEvent
         from PyQt6.QtGui import QKeyEvent
         from qterminator.window import _qkey_to_text
 
@@ -1727,7 +1726,7 @@ class TestBroadcastKeyTranslation:
 
     def test_delete_produces_csi_3_tilde(self):
         """Delete key produces \\x1b[3~."""
-        from PyQt6.QtCore import QEvent, Qt
+        from PyQt6.QtCore import QEvent
         from PyQt6.QtGui import QKeyEvent
         from qterminator.window import _qkey_to_text
 
@@ -1740,7 +1739,7 @@ class TestBroadcastKeyTranslation:
 
     def test_home_produces_csi_h(self):
         """Home key produces \\x1b[H."""
-        from PyQt6.QtCore import QEvent, Qt
+        from PyQt6.QtCore import QEvent
         from PyQt6.QtGui import QKeyEvent
         from qterminator.window import _qkey_to_text
 
@@ -1753,7 +1752,7 @@ class TestBroadcastKeyTranslation:
 
     def test_modifier_only_press_produces_none(self):
         """Modifier-only press (just Shift) produces None."""
-        from PyQt6.QtCore import QEvent, Qt
+        from PyQt6.QtCore import QEvent
         from PyQt6.QtGui import QKeyEvent
         from qterminator.window import _qkey_to_text
 
@@ -1767,7 +1766,7 @@ class TestBroadcastKeyTranslation:
 
     def test_tab_key_produces_tab_char(self):
         """Tab key produces \\t."""
-        from PyQt6.QtCore import QEvent, Qt
+        from PyQt6.QtCore import QEvent
         from PyQt6.QtGui import QKeyEvent
         from qterminator.window import _qkey_to_text
 

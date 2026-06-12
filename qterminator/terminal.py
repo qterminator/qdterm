@@ -308,7 +308,7 @@ class TerminalWidget(QWidget):
 
         Returns True if paste should proceed, False to cancel.
         """
-        from PyQt6.QtWidgets import QApplication, QMessageBox
+        from PyQt6.QtWidgets import QMessageBox
         clipboard = QApplication.clipboard()
         text = clipboard.text()
         if not text:

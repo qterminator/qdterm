@@ -4,6 +4,7 @@ import os
 import time
 
 import pytest
+from qterminator import config as config_mod
 from qterminator.config import Config
 from qterminator.plugins.file_monitor import (
     DEFAULT_CHECK_INTERVAL,
@@ -12,8 +13,6 @@ from qterminator.plugins.file_monitor import (
     DEFAULT_RECURSIVE,
     FileMonitorPlugin,
 )
-
-from qterminator import config as config_mod
 
 # ---------------------------------------------------------------------------
 # Fixtures
