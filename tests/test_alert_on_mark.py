@@ -6,14 +6,12 @@ Layers:
 """
 
 import pytest
-
 import qterminator.config as config_mod
 from qterminator.config import Config
-
 from qterminator.plugins.alert_on_mark import (
-    AlertOnMarkPlugin, AlertOnMarkService,
+    AlertOnMarkPlugin,
+    AlertOnMarkService,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

@@ -4,7 +4,6 @@ import json
 import os
 
 import pytest
-
 import qterminator.config as config_mod
 from qterminator.config import Config
 
@@ -21,10 +20,14 @@ def fresh_config(tmp_path, monkeypatch):
 
 
 from qterminator.plugins.paste_history import (
-    PasteHistoryPlugin, PasteHistoryService, PasteHistoryDialog,
-    looks_like_secret, load_history, save_history, _history_path,
+    PasteHistoryDialog,
+    PasteHistoryPlugin,
+    PasteHistoryService,
+    _history_path,
+    load_history,
+    looks_like_secret,
+    save_history,
 )
-
 
 # ---------------------------------------------------------------------------
 # Secret heuristic
@@ -193,8 +196,8 @@ def test_plugin_attaches_to_real_window(qtbot):
 
 def test_plugin_clipboard_change_pushes_into_history(qtbot):
     """Real QApplication clipboard → dataChanged → service.push."""
-    from qterminator.window import MainWindow
     from PyQt6.QtWidgets import QApplication
+    from qterminator.window import MainWindow
     win = MainWindow()
     win.resize(800, 400)
     qtbot.addWidget(win)
@@ -211,10 +214,9 @@ def test_plugin_clipboard_change_pushes_into_history(qtbot):
 def test_plugin_picker_routes_through_paste_clipboard(qtbot, monkeypatch):
     """Selecting an entry should call terminal.paste_clipboard with
     the chosen text already on the system clipboard."""
-    from qterminator.window import MainWindow
-    from PyQt6.QtWidgets import QApplication
+    from PyQt6.QtWidgets import QApplication, QDialog
     from qterminator.plugins.paste_history import PasteHistoryDialog
-    from PyQt6.QtWidgets import QDialog
+    from qterminator.window import MainWindow
     win = MainWindow()
     win.resize(800, 400)
     qtbot.addWidget(win)
@@ -237,8 +239,8 @@ def test_plugin_picker_routes_through_paste_clipboard(qtbot, monkeypatch):
 
 
 def test_plugin_deactivate_disconnects_clipboard(qtbot):
-    from qterminator.window import MainWindow
     from PyQt6.QtWidgets import QApplication
+    from qterminator.window import MainWindow
     win = MainWindow()
     win.resize(800, 400)
     qtbot.addWidget(win)

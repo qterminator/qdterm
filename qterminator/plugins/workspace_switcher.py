@@ -25,9 +25,8 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
-from qterminator.plugin import MenuProvider
 from qterminator.config import Config
-
+from qterminator.plugin import MenuProvider
 
 DEFAULT_SEARCH_ROOTS = ["~/Documents", "~/Projects", "~/work"]
 DEFAULT_MARKERS = [

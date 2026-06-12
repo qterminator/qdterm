@@ -22,9 +22,8 @@ import time
 
 from PyQt6.QtCore import QTimer
 
-from qterminator.plugin import OutputWatcher
 from qterminator.config import Config
-
+from qterminator.plugin import OutputWatcher
 
 DEFAULT_FLASH_COLOR = "#ff4444"
 DEFAULT_FLASH_DURATION = 150

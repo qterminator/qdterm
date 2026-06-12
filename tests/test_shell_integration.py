@@ -15,10 +15,8 @@ import os
 import time
 
 import pytest
-
 import qterminator.config as config_mod
 from qterminator.config import Config
-
 
 pytest.importorskip("pyte")
 
@@ -60,8 +58,12 @@ def osc(code: str, payload: str = "") -> bytes:
 # ---------------------------------------------------------------------------
 
 from qterminator.plugins.shell_integration import (
-    OSCParser, CommandHistory, CommandStartEvent, ShellIntegrationService,
-    ShellIntegrationPlugin, _decode_file_uri,
+    CommandHistory,
+    CommandStartEvent,
+    OSCParser,
+    ShellIntegrationPlugin,
+    ShellIntegrationService,
+    _decode_file_uri,
 )
 
 
@@ -623,7 +625,12 @@ def test_rpc_command_history_when_plugin_disabled(qtbot, window_with_agent_contr
 # ---------------------------------------------------------------------------
 
 from qterminator.shell_integration_cli import (
-    main as cli_main, HOOKS, install, print_hook,
+    HOOKS,
+    install,
+    print_hook,
+)
+from qterminator.shell_integration_cli import (
+    main as cli_main,
 )
 
 

@@ -6,17 +6,17 @@ Layers:
 """
 
 import pytest
-from PyQt6.QtCore import Qt
-
 import qterminator.config as config_mod
+from PyQt6.QtCore import Qt
 from qterminator.config import Config
 
 pytest.importorskip("pyte")
 
 from qterminator.plugins.instant_replay import (
-    InstantReplayPlugin, ReplayState, ReplayOverlay,
+    InstantReplayPlugin,
+    ReplayOverlay,
+    ReplayState,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

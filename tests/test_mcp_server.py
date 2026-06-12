@@ -22,9 +22,10 @@ import pytest
 mcp_pkg = pytest.importorskip("mcp")
 
 from qterminator.mcp_server import (
-    AgentControlClient, build_server, default_socket_path,
+    AgentControlClient,
+    build_server,
+    default_socket_path,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fake agent_control server for tests

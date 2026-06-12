@@ -2,14 +2,13 @@
 
 import os
 
-from PyQt6.QtCore import pyqtSignal, Qt, QTimer, QObject, QEvent
-from PyQt6.QtGui import QFont, QColor, QPalette
-from PyQt6.QtWidgets import QVBoxLayout, QWidget, QApplication
-
+from PyQt6.QtCore import QEvent, QObject, Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QColor, QFont, QPalette
+from PyQt6.QtWidgets import QApplication, QVBoxLayout, QWidget
 from QTermWidget import QTermWidget
 
-from qterminator.titlebar import TerminalTitlebar
 from qterminator.config import Config
+from qterminator.titlebar import TerminalTitlebar
 
 
 class _ReadOnlyFilter(QObject):

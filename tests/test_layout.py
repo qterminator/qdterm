@@ -3,9 +3,8 @@
 import json
 
 import pytest
-from PyQt6.QtCore import Qt
-
 import qterminator.config as config_mod
+from PyQt6.QtCore import Qt
 from qterminator.config import Config
 from qterminator.layout import (
     _restore_node,

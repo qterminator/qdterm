@@ -19,14 +19,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
 from PyQt6.QtCore import pyqtSignal
-from PyQt6.QtGui import QColor
-from PyQt6.QtGui import QFont
-from PyQt6.QtGui import QPainter
-from PyQt6.QtGui import QPen
-from PyQt6.QtGui import QPixmap
-from PyQt6.QtWidgets import QApplication
-from PyQt6.QtWidgets import QWidget
-
+from PyQt6.QtGui import QColor, QFont, QPainter, QPen, QPixmap
+from PyQt6.QtWidgets import QApplication, QWidget
 
 try:
     import QTermWidget  # noqa: F401

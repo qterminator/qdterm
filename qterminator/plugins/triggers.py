@@ -60,7 +60,6 @@ from PyQt6.QtGui import QColor
 from qterminator.config import Config
 from qterminator.plugin import Plugin
 
-
 log = logging.getLogger("qterminator.triggers")
 
 

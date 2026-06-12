@@ -13,7 +13,6 @@ from PyQt6.QtWidgets import QApplication, QFileDialog, QMessageBox
 
 from qterminator.plugin import MenuProvider
 
-
 # Match ANSI CSI SGR sequences (the ones that carry color/style info),
 # plus generic CSI, OSC, and charset-switch escapes for stripping.
 _SGR_RE = re.compile(r"\x1b\[([0-9;]*)m")

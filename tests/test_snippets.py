@@ -10,7 +10,6 @@ import json
 import os
 
 import pytest
-
 import qterminator.config as config_mod
 from qterminator.config import Config
 
@@ -27,10 +26,13 @@ def fresh_config(tmp_path, monkeypatch):
 
 
 from qterminator.plugins.snippets import (
-    SnippetsPlugin, SnippetPickerDialog, load_snippets,
-    expand_placeholders, send_snippet, _snippets_path,
+    SnippetPickerDialog,
+    SnippetsPlugin,
+    _snippets_path,
+    expand_placeholders,
+    load_snippets,
+    send_snippet,
 )
-
 
 # ---------------------------------------------------------------------------
 # load_snippets

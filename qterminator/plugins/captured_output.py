@@ -32,14 +32,22 @@ from typing import Optional
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import (
-    QDockWidget, QFileDialog, QHBoxLayout, QHeaderView, QMenu,
-    QMessageBox, QPushButton, QTabWidget, QTreeWidget, QTreeWidgetItem,
-    QVBoxLayout, QWidget,
+    QDockWidget,
+    QFileDialog,
+    QHBoxLayout,
+    QHeaderView,
+    QMenu,
+    QMessageBox,
+    QPushButton,
+    QTabWidget,
+    QTreeWidget,
+    QTreeWidgetItem,
+    QVBoxLayout,
+    QWidget,
 )
 
 from qterminator.config import Config
 from qterminator.plugin import MenuProvider
-
 
 # ---------------------------------------------------------------------------
 # Service

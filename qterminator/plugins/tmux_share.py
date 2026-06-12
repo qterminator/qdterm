@@ -44,13 +44,18 @@ from typing import Optional
 
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, QApplication,
-    QPlainTextEdit, QMessageBox,
+    QApplication,
+    QDialog,
+    QHBoxLayout,
+    QLabel,
+    QMessageBox,
+    QPlainTextEdit,
+    QPushButton,
+    QVBoxLayout,
 )
 
-from qterminator.plugin import MenuProvider
 from qterminator.config import Config
-
+from qterminator.plugin import MenuProvider
 
 _MOSH_CONNECT_RE = re.compile(rb"MOSH CONNECT\s+(\d+)\s+(\S+)")
 _MOSH_DETACHED_RE = re.compile(rb"mosh-server detached, pid\s*=\s*(\d+)")

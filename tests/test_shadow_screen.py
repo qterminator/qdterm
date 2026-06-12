@@ -12,7 +12,9 @@ pytest.importorskip("pyte")
 import qterminator.config as config_mod
 from qterminator.config import Config
 from qterminator.shadow_screen import (
-    ShadowScreen, ShadowScreenHandle, ShadowScreenRegistry,
+    ShadowScreen,
+    ShadowScreenHandle,
+    ShadowScreenRegistry,
 )
 
 

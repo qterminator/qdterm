@@ -1,9 +1,8 @@
 """Per-terminal titlebar widget showing title, group, and status indicators."""
 
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QPalette, QColor
+from PyQt6.QtGui import QColor, QPalette
 from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QToolButton, QWidget
-
 
 ACTIVE_BG = "#2a6ea8"
 INACTIVE_BG = "#3c3c3c"

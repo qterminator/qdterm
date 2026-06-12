@@ -8,14 +8,12 @@ Layers:
 import time
 
 import pytest
-
 import qterminator.config as config_mod
 from qterminator.config import Config
-
 from qterminator.plugins.timestamps import (
-    TimestampsPlugin, TimestampMargin,
+    TimestampMargin,
+    TimestampsPlugin,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

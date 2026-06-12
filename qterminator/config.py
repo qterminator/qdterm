@@ -1,8 +1,8 @@
 """Configuration system for QTerminator."""
 
+import copy
 import json
 import os
-import copy
 
 try:
     import tomllib

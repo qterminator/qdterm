@@ -34,7 +34,6 @@ from typing import Callable, Dict, List, Optional, Set
 from qterminator.config import Config
 from qterminator.plugin import Plugin
 
-
 # ---------------------------------------------------------------------------
 # Event types
 # ---------------------------------------------------------------------------

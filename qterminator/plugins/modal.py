@@ -14,7 +14,7 @@ Normal-mode bindings mirror the usual Ctrl+Shift+... shortcuts but
 without modifiers. See MODAL_BINDINGS below for the full list.
 """
 
-from PyQt6.QtCore import QObject, QEvent, Qt
+from PyQt6.QtCore import QEvent, QObject, Qt
 
 from qterminator.plugin import Plugin
 

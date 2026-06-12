@@ -77,8 +77,8 @@ class HotkeyWindowPlugin(Plugin):
     def _setup_shortcut(self, app_controller):
         """Set up shortcut to toggle dropdown window."""
         try:
-            from PyQt6.QtGui import QKeySequence
             from PyQt6.QtCore import Qt
+            from PyQt6.QtGui import QKeySequence
 
             cfg = Config()
             shortcut_str = cfg.get(
@@ -131,8 +131,9 @@ class HotkeyWindowPlugin(Plugin):
     def _create_dropdown_window(self):
         """Create a new dropdown/floating window."""
         try:
-            from qterminator.window import MainWindow
             from PyQt6.QtWidgets import QApplication
+
+            from qterminator.window import MainWindow
         except ImportError:
             return
 

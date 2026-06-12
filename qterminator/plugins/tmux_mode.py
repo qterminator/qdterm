@@ -44,9 +44,8 @@ from typing import Optional
 
 from PyQt6.QtCore import QTimer
 
+from qterminator.config import CONFIG_DIR, Config
 from qterminator.plugin import MenuProvider
-from qterminator.config import Config, CONFIG_DIR
-
 
 TMUX_CONF_DEFAULT = """\
 # qterminator tmux_mode config — keeps tmux invisible to the user.

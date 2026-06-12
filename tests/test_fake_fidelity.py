@@ -38,9 +38,8 @@ signature checks and the fake-sentinel assert only make sense against the fake.
 import inspect
 
 import pytest
-from PyQt6.QtCore import pyqtBoundSignal
-
 import QTermWidget as _qtw_mod
+from PyQt6.QtCore import pyqtBoundSignal
 
 # --------------------------------------------------------------------------
 # Module gate: these tests only make sense when the in-process FAKE is loaded.
@@ -65,7 +64,6 @@ if not (
     )
 
 import QTermWidget
-
 
 # ---------------------------------------------------------------------------
 # The contract: QTermWidget methods the app calls on the underlying widget.

@@ -32,14 +32,21 @@ from typing import Optional
 
 from PyQt6.QtGui import QAction, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QListWidget, QListWidgetItem,
-    QLineEdit, QLabel, QPushButton, QMessageBox, QInputDialog,
+    QDialog,
+    QHBoxLayout,
+    QInputDialog,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    QMessageBox,
+    QPushButton,
+    QVBoxLayout,
 )
 
 from qterminator import config as _config_mod
 from qterminator.config import Config
 from qterminator.plugin import MenuProvider
-
 
 PLACEHOLDER_RE = re.compile(r"\$\{(\d+):([^}]*)\}")
 

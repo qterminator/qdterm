@@ -22,7 +22,6 @@ import os
 import sys
 from pathlib import Path
 
-
 # Hook scripts emit:
 #   OSC 133 ;A          before each prompt (PROMPT precmd)
 #   OSC 133 ;B          after prompt, before command runs (between PS1

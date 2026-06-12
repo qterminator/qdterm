@@ -11,9 +11,7 @@ import subprocess
 import time
 
 import pytest
-
 from qterminator.plugins.process_control import ProcessControlPlugin
-
 
 # ---------------------------------------------------------------------------
 # helpers / fixtures

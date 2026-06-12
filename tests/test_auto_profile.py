@@ -7,15 +7,15 @@ Layers:
 """
 
 import pytest
-
 import qterminator.config as config_mod
 from qterminator.config import Config
-
 from qterminator.plugins.auto_profile import (
-    AutoProfilePlugin, AutoProfileService, ProfileRule,
-    parse_ssh_host, _read_proc_cmdline,
+    AutoProfilePlugin,
+    AutoProfileService,
+    ProfileRule,
+    _read_proc_cmdline,
+    parse_ssh_host,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

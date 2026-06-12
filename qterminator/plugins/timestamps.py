@@ -16,7 +16,7 @@ import time
 from typing import Optional
 
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QColor, QPainter, QFont, QTextCharFormat, QTextCursor
+from PyQt6.QtGui import QColor, QFont, QPainter, QTextCharFormat, QTextCursor
 from PyQt6.QtWidgets import QLabel, QToolTip, QWidget
 
 from qterminator.config import Config

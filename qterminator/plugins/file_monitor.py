@@ -26,8 +26,8 @@ import time
 
 from PyQt6.QtCore import QTimer
 
-from qterminator.plugin import Plugin
 from qterminator.config import Config
+from qterminator.plugin import Plugin
 
 try:
     from qterminator.plugins.notifications import _flash_terminal

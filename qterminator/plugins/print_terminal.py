@@ -6,7 +6,7 @@ scrollback to a real printer, picked via QPrintDialog.
 
 from PyQt6.QtCore import QRectF
 from PyQt6.QtGui import QPainter, QTextDocument
-from PyQt6.QtPrintSupport import QPrinter, QPrintDialog
+from PyQt6.QtPrintSupport import QPrintDialog, QPrinter
 from PyQt6.QtWidgets import QDialog, QMessageBox
 
 from qterminator.plugin import MenuProvider

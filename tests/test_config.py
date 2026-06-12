@@ -1,9 +1,10 @@
 """Tests for the config system."""
 
 import json
+
 import pytest
 import qterminator.config as config_mod
-from qterminator.config import Config, DEFAULTS, _toml_value, _write_toml
+from qterminator.config import DEFAULTS, Config, _toml_value, _write_toml
 
 
 @pytest.fixture(autouse=True)

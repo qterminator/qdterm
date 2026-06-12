@@ -16,8 +16,7 @@ import importlib.util
 import os
 import sys
 
-from qterminator.config import Config, CONFIG_DIR
-
+from qterminator.config import CONFIG_DIR, Config
 
 PLUGIN_DIRS = [
     os.path.join(os.path.dirname(__file__), "plugins"),

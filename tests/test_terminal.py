@@ -3,12 +3,11 @@
 import os
 
 import pytest
-from PyQt6.QtCore import Qt, pyqtSignal
-
 import qterminator.config as config_mod
+from PyQt6.QtCore import Qt, pyqtSignal
 from qterminator.config import Config
-from qterminator.terminal import TerminalWidget
 from qterminator.splitter import SplitContainer
+from qterminator.terminal import TerminalWidget
 
 
 @pytest.fixture(autouse=True)
@@ -121,8 +120,8 @@ class TestTerminalReadOnly:
     # --- Enforcement: the flag must actually block direct input ---
 
     def _key_event(self, text="a", key=Qt.Key.Key_A):
-        from PyQt6.QtGui import QKeyEvent
         from PyQt6.QtCore import QEvent
+        from PyQt6.QtGui import QKeyEvent
         return QKeyEvent(QEvent.Type.KeyPress, key,
                          Qt.KeyboardModifier.NoModifier, text)
 
@@ -164,8 +163,8 @@ class TestTerminalReadOnly:
         assert t._read_only_filter.eventFilter(t._term, ev) is True
 
     def test_keyrelease_swallowed_when_read_only(self, qtbot):
-        from PyQt6.QtGui import QKeyEvent
         from PyQt6.QtCore import QEvent
+        from PyQt6.QtGui import QKeyEvent
         t = _make_terminal(qtbot)
         t.set_read_only(True)
         ev = QKeyEvent(QEvent.Type.KeyRelease, Qt.Key.Key_A,
@@ -257,8 +256,8 @@ class TestTerminalReadOnly:
     # --- Middle-click paste (primary-selection paste into the pty) ---
 
     def _mouse_event(self, button):
-        from PyQt6.QtGui import QMouseEvent
         from PyQt6.QtCore import QEvent, QPointF
+        from PyQt6.QtGui import QMouseEvent
         return QMouseEvent(QEvent.Type.MouseButtonPress, QPointF(1, 1),
                            button, button, Qt.KeyboardModifier.NoModifier)
 

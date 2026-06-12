@@ -1,11 +1,12 @@
 """Tests for the scheduler plugin."""
 
 import pytest
-
 import qterminator.config as config_mod
 from qterminator.config import Config
 from qterminator.plugins.scheduler import (
-    ScheduledTask, SchedulerPlugin, TAB_INDICATOR,
+    TAB_INDICATOR,
+    ScheduledTask,
+    SchedulerPlugin,
 )
 
 

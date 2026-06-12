@@ -8,7 +8,6 @@ disk -- mirroring the existence guard that FilePathHandler already applies.
 import os
 
 import pytest
-
 from qterminator.plugins import pattern_links
 from qterminator.plugins.pattern_links import FilePathHandler, StackTraceHandler
 

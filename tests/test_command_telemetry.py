@@ -20,10 +20,8 @@ import subprocess
 import time
 
 import pytest
-
 import qterminator.config as config_mod
 from qterminator.config import Config
-
 
 pytest.importorskip("pyte")
 
@@ -143,7 +141,7 @@ def test_proc_tree_sampler_walk_tree(fake_proc):
 
 
 def test_proc_tree_sampler_read_cpu_seconds(fake_proc):
-    from qterminator.plugins.command_telemetry import ProcTreeSampler, _CLK_TCK
+    from qterminator.plugins.command_telemetry import _CLK_TCK, ProcTreeSampler
     sampler = ProcTreeSampler(proc_root=fake_proc)
     cpu = sampler.read_cpu_seconds(100)
     expected = (500 + 200) / _CLK_TCK
@@ -160,7 +158,7 @@ def test_proc_tree_sampler_read_rss_bytes(fake_proc):
 
 
 def test_proc_tree_sampler_sample_aggregates_tree(fake_proc):
-    from qterminator.plugins.command_telemetry import ProcTreeSampler, _CLK_TCK
+    from qterminator.plugins.command_telemetry import _CLK_TCK, ProcTreeSampler
     sampler = ProcTreeSampler(proc_root=fake_proc)
     snap = sampler.sample(100)
     # CPU: sum of all processes
@@ -219,7 +217,7 @@ def test_proc_tree_sampler_missing_pid():
 def test_proc_tree_sampler_fallback_ppid_scan(tmp_path):
     """When /proc/<pid>/task/<pid>/children is missing, the sampler
     should fall back to scanning all /proc/*/stat for matching ppid."""
-    from qterminator.plugins.command_telemetry import ProcTreeSampler, _CLK_TCK
+    from qterminator.plugins.command_telemetry import _CLK_TCK, ProcTreeSampler
 
     proc = tmp_path / "proc_no_children"
 
@@ -1337,8 +1335,9 @@ def test_read_open_files_missing_pid():
 # ---------------------------------------------------------------------------
 
 def test_read_gpu_usage_mock_nvidia_smi(monkeypatch, tmp_path):
+    from unittest.mock import MagicMock, patch
+
     from qterminator.plugins.command_telemetry import ProcTreeSampler
-    from unittest.mock import patch, MagicMock
 
     sampler = ProcTreeSampler()
     fake_result = MagicMock()
@@ -1353,8 +1352,9 @@ def test_read_gpu_usage_mock_nvidia_smi(monkeypatch, tmp_path):
 
 
 def test_read_gpu_usage_no_nvidia_smi(monkeypatch):
-    from qterminator.plugins.command_telemetry import ProcTreeSampler
     from unittest.mock import patch
+
+    from qterminator.plugins.command_telemetry import ProcTreeSampler
 
     sampler = ProcTreeSampler()
     with patch("subprocess.run", side_effect=FileNotFoundError):
@@ -1369,8 +1369,9 @@ def test_read_gpu_usage_empty_pids():
 
 
 def test_read_gpu_usage_parsing_edge_cases(monkeypatch):
+    from unittest.mock import MagicMock, patch
+
     from qterminator.plugins.command_telemetry import ProcTreeSampler
-    from unittest.mock import patch, MagicMock
 
     sampler = ProcTreeSampler()
     fake_result = MagicMock()
@@ -1390,8 +1391,9 @@ def test_read_gpu_usage_parsing_edge_cases(monkeypatch):
 
 
 def test_read_gpu_usage_nonzero_returncode(monkeypatch):
+    from unittest.mock import MagicMock, patch
+
     from qterminator.plugins.command_telemetry import ProcTreeSampler
-    from unittest.mock import patch, MagicMock
 
     sampler = ProcTreeSampler()
     fake_result = MagicMock()
@@ -1404,8 +1406,9 @@ def test_read_gpu_usage_nonzero_returncode(monkeypatch):
 
 
 def test_read_gpu_usage_no_matching_pids(monkeypatch):
+    from unittest.mock import MagicMock, patch
+
     from qterminator.plugins.command_telemetry import ProcTreeSampler
-    from unittest.mock import patch, MagicMock
 
     sampler = ProcTreeSampler()
     fake_result = MagicMock()
@@ -1470,8 +1473,9 @@ def test_sample_extended_all_collectors_off(fake_proc):
 
 
 def test_sample_extended_all_collectors_on(fake_proc):
+    from unittest.mock import MagicMock, patch
+
     from qterminator.plugins.command_telemetry import ProcTreeSampler
-    from unittest.mock import patch, MagicMock
     sampler = ProcTreeSampler(proc_root=fake_proc)
 
     # Mock nvidia-smi to avoid real GPU dependency.
@@ -1662,10 +1666,14 @@ def test_to_dict_duration_rounding():
 
 def test_tab_tracker_binary_cpu_accumulation(fake_proc, monkeypatch):
     """binary_cpu_seconds should accumulate deltas across multiple samples."""
-    from qterminator.plugins.command_telemetry import (
-        _TabTracker, _default_sampler, ProcTreeSampler, _CLK_TCK,
-    )
     import os as _os
+
+    from qterminator.plugins.command_telemetry import (
+        _CLK_TCK,
+        ProcTreeSampler,
+        _default_sampler,
+        _TabTracker,
+    )
 
     # Point the module-level _default_sampler at our fake proc.
     original_root = _default_sampler.proc_root

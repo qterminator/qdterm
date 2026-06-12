@@ -5,7 +5,6 @@ import os
 import pytest
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import QApplication, QWidget
-
 from qterminator.plugins.screenshot import ScreenshotPlugin
 
 

@@ -6,7 +6,6 @@ printer is touched. The goal is to verify menu wiring and dispatch logic.
 
 import pytest
 from PyQt6.QtWidgets import QDialog, QWidget
-
 from qterminator.plugins.print_terminal import PrintPlugin
 
 

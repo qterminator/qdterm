@@ -23,7 +23,6 @@ from PyQt6.QtGui import QKeySequence, QShortcut
 from qterminator.config import Config
 from qterminator.plugin import Plugin
 
-
 # ---------------------------------------------------------------------------
 # Closed tab record
 # ---------------------------------------------------------------------------

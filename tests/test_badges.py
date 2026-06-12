@@ -13,10 +13,8 @@ import subprocess
 import time
 
 import pytest
-
 import qterminator.config as config_mod
 from qterminator.config import Config
-
 
 pytest.importorskip("pyte")
 
@@ -33,10 +31,15 @@ def fresh_config(tmp_path, monkeypatch):
 
 
 from qterminator.plugins.badges import (
-    BadgesPlugin, BadgesService, _BadgeOverlay, _BranchCache,
-    render_template, collect_context, shorten_cwd, hostname,
+    BadgesPlugin,
+    BadgesService,
+    _BadgeOverlay,
+    _BranchCache,
+    collect_context,
+    hostname,
+    render_template,
+    shorten_cwd,
 )
-
 
 # ---------------------------------------------------------------------------
 # Template / helpers
@@ -256,9 +259,9 @@ def test_plugin_attaches_new_tabs(qtbot):
 
 def test_plugin_keypress_hides_overlay(qtbot):
     _set_profile_badge("{hostname}")
-    from qterminator.window import MainWindow
     from PyQt6.QtCore import QEvent
     from PyQt6.QtGui import QKeyEvent
+    from qterminator.window import MainWindow
     win = MainWindow()
     win.resize(800, 400)
     qtbot.addWidget(win)

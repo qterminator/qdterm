@@ -3,15 +3,20 @@
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QAction, QIcon, QKeySequence
 from PyQt6.QtWidgets import (
-    QMainWindow, QTabWidget, QTabBar, QMessageBox, QWidget,
-    QVBoxLayout, QLineEdit, QMenu,
+    QLineEdit,
+    QMainWindow,
+    QMenu,
+    QMessageBox,
+    QTabBar,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
 )
 
-from qterminator.terminal import TerminalWidget
-from qterminator.splitter import SplitContainer
 from qterminator.config import Config
+from qterminator.splitter import SplitContainer
+from qterminator.terminal import TerminalWidget
 from qterminator.translation import _ as tr
-
 
 _QT_KEY_TO_ANSI = {
     Qt.Key.Key_Up: "\x1b[A",
@@ -281,7 +286,8 @@ class MainWindow(QMainWindow):
     def _populate_tools_menu(self):
         """Rebuild the Tools menu from plugin contributions on each open."""
         from qterminator.context_menu import (
-            collect_plugin_items_by_category, CATEGORY_ORDER,
+            CATEGORY_ORDER,
+            collect_plugin_items_by_category,
         )
         self._tools_menu.clear()
         if not self._active_terminal:

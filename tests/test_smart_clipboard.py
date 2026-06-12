@@ -12,7 +12,6 @@ Qt clipboard is the real offscreen one (set + read in-process).
 """
 
 import pytest
-
 from qterminator.plugins.smart_clipboard import SmartClipboardPlugin
 
 

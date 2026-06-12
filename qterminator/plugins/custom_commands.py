@@ -4,8 +4,8 @@ Adds user-defined commands to the context menu.
 Commands are stored in config under [plugins.custom_commands].
 """
 
-from qterminator.plugin import MenuProvider
 from qterminator.config import Config
+from qterminator.plugin import MenuProvider
 
 
 class CustomCommandsPlugin(MenuProvider):

@@ -10,14 +10,12 @@ import json
 import os
 
 import pytest
-
 import qterminator.config as config_mod
 from qterminator.config import Config
-
 from qterminator.plugins.dynamic_profiles import (
-    DynamicProfilesPlugin, _default_profiles_dir,
+    DynamicProfilesPlugin,
+    _default_profiles_dir,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

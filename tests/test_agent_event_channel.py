@@ -8,14 +8,13 @@ Layers:
 """
 
 import pytest
-
 import qterminator.config as config_mod
 from qterminator.config import Config
-
 from qterminator.plugins.agent_event_channel import (
-    AgentEventChannelPlugin, AgentEventChannel, EventTypes,
+    AgentEventChannel,
+    AgentEventChannelPlugin,
+    EventTypes,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

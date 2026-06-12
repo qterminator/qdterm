@@ -33,9 +33,8 @@ from typing import Optional
 
 from PyQt6.QtWidgets import QFileDialog, QMessageBox
 
-from qterminator.plugin import MenuProvider
 from qterminator.config import Config
-
+from qterminator.plugin import MenuProvider
 
 ASCIICAST_VERSION = 3
 

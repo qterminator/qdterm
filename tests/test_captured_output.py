@@ -12,10 +12,8 @@ import os
 import time
 
 import pytest
-
 import qterminator.config as config_mod
 from qterminator.config import Config
-
 
 pytest.importorskip("pyte")
 
@@ -32,10 +30,11 @@ def fresh_config(tmp_path, monkeypatch):
 
 
 from qterminator.plugins.captured_output import (
-    CapturedOutputService, CapturedOutputPlugin, CapturedOutputDock,
+    CapturedOutputDock,
+    CapturedOutputPlugin,
+    CapturedOutputService,
 )
 from qterminator.plugins.triggers import TriggerEvent
-
 
 # ---------------------------------------------------------------------------
 # Service

@@ -1,9 +1,7 @@
 """Tests for CLI argument parsing."""
 
 import pytest
-
 from qterminator.__main__ import _execute_shell_command, parse_args
-
 
 # --- Existing tests (preserved) ---
 

@@ -2,18 +2,18 @@
 
 import os
 import time
+
 import pytest
-
-from qterminator.plugins.file_monitor import (
-    FileMonitorPlugin,
-    DEFAULT_INACTIVITY_TIMEOUT,
-    DEFAULT_CHECK_INTERVAL,
-    DEFAULT_RECURSIVE,
-    DEFAULT_IGNORE_PATTERNS,
-)
 from qterminator.config import Config
-from qterminator import config as config_mod
+from qterminator.plugins.file_monitor import (
+    DEFAULT_CHECK_INTERVAL,
+    DEFAULT_IGNORE_PATTERNS,
+    DEFAULT_INACTIVITY_TIMEOUT,
+    DEFAULT_RECURSIVE,
+    FileMonitorPlugin,
+)
 
+from qterminator import config as config_mod
 
 # ---------------------------------------------------------------------------
 # Fixtures

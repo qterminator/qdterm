@@ -17,11 +17,11 @@ Configuration (config.toml):
 """
 
 import os
-import subprocess
 import shutil
+import subprocess
 
-from qterminator.plugin import Plugin, MenuProvider
 from qterminator.config import Config
+from qterminator.plugin import MenuProvider, Plugin
 
 
 def _tmux_available():

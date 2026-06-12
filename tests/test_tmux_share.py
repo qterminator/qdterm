@@ -12,13 +12,16 @@ import subprocess
 from unittest.mock import patch
 
 import pytest
-
 import qterminator.config as config_mod
 from qterminator.config import Config
 from qterminator.plugins.tmux_share import (
-    TmuxShareService, TmuxSharePlugin, Share,
-    _MOSH_CONNECT_RE, _MOSH_DETACHED_RE,
-    _scan_mosh_server_pid, _discover_running_shares,
+    _MOSH_CONNECT_RE,
+    _MOSH_DETACHED_RE,
+    Share,
+    TmuxSharePlugin,
+    TmuxShareService,
+    _discover_running_shares,
+    _scan_mosh_server_pid,
 )
 
 
@@ -590,8 +593,9 @@ def test_shares_for_returns_only_live_entries():
 # ---------------------------------------------------------------------------
 
 def test_qr_pixmap_returns_none_without_qrcode(monkeypatch):
-    from qterminator.plugins.tmux_share import _ShareDialog
     import builtins
+
+    from qterminator.plugins.tmux_share import _ShareDialog
     real_import = builtins.__import__
 
     def mock_import(name, *args, **kwargs):

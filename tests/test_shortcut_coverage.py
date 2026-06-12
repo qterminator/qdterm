@@ -11,10 +11,9 @@ The test works by:
 """
 
 import pytest
+import qterminator.config as config_mod
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QKeySequence
-
-import qterminator.config as config_mod
 from qterminator.config import Config
 from qterminator.window import MainWindow
 

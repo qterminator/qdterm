@@ -44,7 +44,6 @@ from PyQt6.QtWidgets import QLabel
 from qterminator.config import Config
 from qterminator.plugin import Plugin
 
-
 # ---------------------------------------------------------------------------
 # Template + variable resolution
 # ---------------------------------------------------------------------------

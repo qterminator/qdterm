@@ -2,14 +2,18 @@
 
 import os
 import re
+
 import pytest
-
-from qterminator.plugin import (
-    Plugin, URLHandler, MenuProvider, OutputWatcher, PluginManager,
-)
 from qterminator.config import Config
-from qterminator import config as config_mod
+from qterminator.plugin import (
+    MenuProvider,
+    OutputWatcher,
+    Plugin,
+    PluginManager,
+    URLHandler,
+)
 
+from qterminator import config as config_mod
 
 # ---------------------------------------------------------------------------
 # Fixtures

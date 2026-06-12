@@ -3,12 +3,11 @@
 from unittest.mock import patch
 
 import pytest
-from PyQt6.QtGui import QIcon
-
 import qterminator.config as config_mod
+from PyQt6.QtGui import QIcon
 from qterminator.config import Config
-from qterminator.window import MainWindow
 from qterminator.context_menu import build_context_menu
+from qterminator.window import MainWindow
 
 
 @pytest.fixture(autouse=True)

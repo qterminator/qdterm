@@ -23,10 +23,9 @@ All browser opens are mocked; nothing is actually launched.
 from unittest.mock import patch
 
 import pytest
-
 import qterminator.config as config_mod
 from qterminator.config import Config
-from qterminator.plugins.url_handlers import WebURLHandler, IssueTrackerHandler
+from qterminator.plugins.url_handlers import IssueTrackerHandler, WebURLHandler
 
 
 @pytest.fixture(autouse=True)

@@ -36,10 +36,10 @@ import socket
 import struct
 from typing import Any, Optional
 
-from PyQt6.QtCore import QObject, QSocketNotifier, QBuffer, QByteArray, QIODevice
+from PyQt6.QtCore import QBuffer, QByteArray, QIODevice, QObject, QSocketNotifier
 
-from qterminator.plugin import Plugin
 from qterminator.config import Config
+from qterminator.plugin import Plugin
 
 
 def _socket_path() -> str:

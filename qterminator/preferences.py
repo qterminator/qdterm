@@ -1,19 +1,39 @@
 """Preferences dialog for QTerminator."""
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont, QFontDatabase, QKeySequence
+from PyQt6.QtCore import QModelIndex, Qt
+from PyQt6.QtGui import QBrush, QColor, QFont, QFontDatabase, QKeySequence
 from PyQt6.QtWidgets import (
-    QAbstractItemView, QApplication, QDialog, QTabWidget, QVBoxLayout,
-    QHBoxLayout, QFormLayout, QComboBox, QSpinBox, QCheckBox,
-    QDialogButtonBox, QHeaderView, QKeySequenceEdit, QLabel, QMenu,
-    QFontComboBox, QWidget, QGroupBox, QDoubleSpinBox, QPushButton,
-    QFontDialog, QFrame, QLineEdit, QListWidget, QListWidgetItem,
-    QStackedWidget, QScrollArea,
-    QStyledItemDelegate, QTreeWidget, QTreeWidgetItem,
+    QAbstractItemView,
+    QApplication,
+    QCheckBox,
+    QComboBox,
+    QDialog,
+    QDialogButtonBox,
+    QDoubleSpinBox,
+    QFontComboBox,
+    QFontDialog,
+    QFormLayout,
+    QFrame,
+    QGroupBox,
+    QHBoxLayout,
+    QHeaderView,
+    QKeySequenceEdit,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    QMenu,
+    QPushButton,
+    QScrollArea,
+    QSpinBox,
+    QStackedWidget,
+    QStyledItemDelegate,
+    QTabWidget,
+    QTreeWidget,
+    QTreeWidgetItem,
+    QVBoxLayout,
+    QWidget,
 )
-from PyQt6.QtCore import QModelIndex
-from PyQt6.QtGui import QBrush, QColor
-
 
 # Action name -> human-readable category. Anything not listed falls into
 # "Other". Categories themselves are rendered in this declared order.

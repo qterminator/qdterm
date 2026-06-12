@@ -11,14 +11,18 @@ Configuration:
 ```
 """
 
-from PyQt6.QtCore import QTimer, QDateTime
+from PyQt6.QtCore import QDateTime, QTimer
 from PyQt6.QtWidgets import (
-    QDialog, QDialogButtonBox, QFormLayout, QLineEdit, QMessageBox, QSpinBox,
+    QDialog,
+    QDialogButtonBox,
+    QFormLayout,
+    QLineEdit,
+    QMessageBox,
+    QSpinBox,
     QVBoxLayout,
 )
 
 from qterminator.plugin import MenuProvider
-
 
 TAB_INDICATOR = "\u23f0 "  # alarm clock
 

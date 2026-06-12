@@ -15,7 +15,7 @@ from typing import Optional
 
 from PyQt6.QtWidgets import QMessageBox
 
-from qterminator.config import Config, CONFIG_DIR
+from qterminator.config import CONFIG_DIR, Config
 from qterminator.plugin import MenuProvider
 
 

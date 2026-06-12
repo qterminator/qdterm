@@ -11,8 +11,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey,
     Ed25519PublicKey,
 )
-
-from qterminator.plugins.tmux_ssh_share import TmuxSSHShareService, SSHShare
+from qterminator.plugins.tmux_ssh_share import SSHShare, TmuxSSHShareService
 from qterminator.plugins.tmux_web_share import (
     TmuxWebShareService,
     _load_authorized_keys,
@@ -222,6 +221,7 @@ def test_websocket_read_only_drops_input(monkeypatch):
 
 def test_ssh_share_connect_string_format(tmp_path):
     import getpass
+
     from qterminator.plugins.tmux_ssh_share import SSHShare
 
     class _Proc:
@@ -624,8 +624,9 @@ def test_ssh_start_share_accepts_safe_session_names(tmp_path):
 
 def test_ws_recv_text_handles_close_opcode():
     """Close frame (opcode 8) returns None."""
-    from qterminator.plugins.tmux_web_share import _ws_recv_text
     import io
+
+    from qterminator.plugins.tmux_web_share import _ws_recv_text
 
     frame = bytes([0x88, 0x00])
 

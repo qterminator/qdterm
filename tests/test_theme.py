@@ -1,9 +1,9 @@
 """Tests for qterminator.theme module."""
 
 import pytest
+from PyQt6.QtGui import QColor, QPalette
 from PyQt6.QtWidgets import QApplication
-from PyQt6.QtGui import QPalette, QColor
-from qterminator.theme import apply_dark_theme, STYLESHEET
+from qterminator.theme import STYLESHEET, apply_dark_theme
 
 
 @pytest.fixture

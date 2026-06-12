@@ -69,6 +69,7 @@ class IssueTrackerHandler(URLHandler):
 
     def _load_config(self):
         import json
+
         from qterminator.config import Config
         config = Config()
         entries = config.get("plugins", "issue_tracker", "patterns", default=[])

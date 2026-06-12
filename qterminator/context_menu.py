@@ -1,8 +1,7 @@
 """Context menu for terminal widget."""
 
 from PyQt6.QtGui import QAction, QIcon
-from PyQt6.QtWidgets import QMenu, QInputDialog
-
+from PyQt6.QtWidgets import QInputDialog, QMenu
 from QTermWidget import QTermWidget
 
 from qterminator.translation import _ as tr

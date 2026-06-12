@@ -2,7 +2,6 @@
 
 import pytest
 from PyQt6.QtWidgets import QWidget
-
 from qterminator.plugins.pdf_export import (
     PdfExportPlugin,
     _buffer_text,

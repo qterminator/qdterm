@@ -23,10 +23,11 @@ pytest.importorskip("pyte")
 
 import qterminator.config as config_mod
 from qterminator.config import Config
-from qterminator.shadow_screen import ShadowScreenRegistry
 from qterminator.plugins.asciinema_record import (
-    AsciinemaRecorderService, ASCIICAST_VERSION,
+    ASCIICAST_VERSION,
+    AsciinemaRecorderService,
 )
+from qterminator.shadow_screen import ShadowScreenRegistry
 
 
 @pytest.fixture(autouse=True)

@@ -31,14 +31,20 @@ from typing import Optional
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
-    QApplication, QDialog, QHBoxLayout, QVBoxLayout, QListWidget,
-    QListWidgetItem, QPlainTextEdit, QPushButton, QMessageBox,
+    QApplication,
+    QDialog,
+    QHBoxLayout,
+    QListWidget,
+    QListWidgetItem,
+    QMessageBox,
+    QPlainTextEdit,
+    QPushButton,
+    QVBoxLayout,
 )
 
 from qterminator import config as _config_mod
 from qterminator.config import Config
 from qterminator.plugin import MenuProvider
-
 
 _SECRET_PATTERNS = [
     re.compile(r"-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----"),

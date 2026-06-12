@@ -4,8 +4,13 @@ import pytest
 from PyQt6.QtCore import Qt
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QLabel, QToolButton
-
-from qterminator.titlebar import TerminalTitlebar, GROUP_COLORS, TITLE_HEIGHT, ACTIVE_BG, INACTIVE_BG
+from qterminator.titlebar import (
+    ACTIVE_BG,
+    GROUP_COLORS,
+    INACTIVE_BG,
+    TITLE_HEIGHT,
+    TerminalTitlebar,
+)
 
 
 @pytest.fixture

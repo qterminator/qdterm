@@ -14,10 +14,8 @@ import threading
 import time
 
 import pytest
-
 import qterminator.config as config_mod
 from qterminator.config import Config
-
 
 pytest.importorskip("pyte")
 

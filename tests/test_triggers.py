@@ -15,10 +15,8 @@ import re
 import time
 
 import pytest
-
 import qterminator.config as config_mod
 from qterminator.config import Config
-
 
 pytest.importorskip("pyte")
 
@@ -45,12 +43,16 @@ def terminal(qtbot):
     yield t
 
 
-from qterminator.shadow_screen import ShadowScreenRegistry
 from qterminator.plugins.triggers import (
-    Rule, TriggerEvent, TriggersService, TriggersPlugin,
-    load_rules, _resolve_template, BUILTIN_ACTIONS,
+    BUILTIN_ACTIONS,
+    Rule,
+    TriggerEvent,
+    TriggersPlugin,
+    TriggersService,
+    _resolve_template,
+    load_rules,
 )
-
+from qterminator.shadow_screen import ShadowScreenRegistry
 
 # ---------------------------------------------------------------------------
 # load_rules
@@ -454,8 +456,8 @@ def test_set_tab_color_action_updates_tabbar(qtbot):
     cfg.set("plugins", "triggers", "rules", [
         {"pattern": "FLAG", "action": "set_tab_color", "color": "#e74c3c"},
     ])
-    from qterminator.window import MainWindow
     from PyQt6.QtGui import QColor
+    from qterminator.window import MainWindow
     win = MainWindow()
     win.resize(800, 400)
     qtbot.addWidget(win)

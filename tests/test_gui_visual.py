@@ -7,6 +7,7 @@ manual inspection.
 """
 
 import os
+
 import pytest
 from PyQt6.QtCore import Qt
 from PyQt6.QtTest import QTest
@@ -23,12 +24,11 @@ def _is_valid_png(path, min_size=5000):
         return fh.read(8) == _PNG_MAGIC
 
 import qterminator.config as config_mod
-from qterminator.config import Config
 from PyQt6.QtWidgets import QMessageBox
-
-from qterminator.window import MainWindow
+from qterminator.config import Config
 from qterminator.preferences import PreferencesDialog
 from qterminator.theme import apply_dark_theme
+from qterminator.window import MainWindow
 
 SCREENSHOT_DIR = "/tmp"
 

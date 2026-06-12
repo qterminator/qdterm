@@ -1,17 +1,21 @@
 """Tests for preferences dialog."""
 
 import pytest
+import qterminator.config as config_mod
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
-    QTabWidget, QComboBox, QSpinBox, QDoubleSpinBox, QCheckBox,
-    QFontComboBox, QLabel,
+    QCheckBox,
+    QComboBox,
+    QDoubleSpinBox,
+    QFontComboBox,
+    QLabel,
+    QSpinBox,
+    QTabWidget,
 )
-
-import qterminator.config as config_mod
 from qterminator.config import Config
-from qterminator.window import MainWindow
 from qterminator.preferences import PreferencesDialog
+from qterminator.window import MainWindow
 
 
 @pytest.fixture(autouse=True)
@@ -680,8 +684,8 @@ class TestEditableShortcuts:
         assert cfg.get_keybinding("new_tab") == ""
 
     def test_delegate_is_key_sequence_delegate(self, window, qtbot):
-        from qterminator.preferences import _KeySequenceDelegate
         from PyQt6.QtWidgets import QKeySequenceEdit
+        from qterminator.preferences import _KeySequenceDelegate
         dlg = PreferencesDialog(window)
         qtbot.addWidget(dlg)
         delegate = dlg._shortcut_tree.itemDelegateForColumn(1)

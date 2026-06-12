@@ -56,7 +56,6 @@ from PyQt6.QtCore import QTimer
 from qterminator.config import Config
 from qterminator.plugin import Plugin
 
-
 log = logging.getLogger("qterminator.command_telemetry")
 
 #: Valid display modes.

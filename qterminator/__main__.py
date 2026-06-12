@@ -6,9 +6,9 @@ import sys
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QApplication
 
-from qterminator.window import MainWindow
 from qterminator.config import Config
 from qterminator.theme import apply_theme
+from qterminator.window import MainWindow
 
 
 def parse_args():

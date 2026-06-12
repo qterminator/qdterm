@@ -33,7 +33,6 @@ from PyQt6.QtWidgets import QApplication, QPlainTextEdit, QWidget
 from qterminator.config import Config
 from qterminator.plugin import Plugin
 
-
 # ---------------------------------------------------------------------------
 # Replay state machine
 # ---------------------------------------------------------------------------
@@ -252,8 +251,8 @@ class ReplayOverlay(QPlainTextEdit):
     def paintEvent(self, event):
         super().paintEvent(event)
         # Draw status bar in bottom margin
-        from PyQt6.QtGui import QPainter, QColor, QFont
         from PyQt6.QtCore import QRect
+        from PyQt6.QtGui import QColor, QFont, QPainter
 
         painter = QPainter(self)
         painter.fillRect(

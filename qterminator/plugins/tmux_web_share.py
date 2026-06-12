@@ -16,14 +16,12 @@ from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Optional
 
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from cryptography.exceptions import InvalidSignature
-
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from PyQt6.QtWidgets import QMessageBox
 
-from qterminator.config import Config, CONFIG_DIR
+from qterminator.config import CONFIG_DIR, Config
 from qterminator.plugin import MenuProvider
-
 
 _AUTHORIZED_KEYS_PATH = os.path.join(CONFIG_DIR, "authorized_keys")
 

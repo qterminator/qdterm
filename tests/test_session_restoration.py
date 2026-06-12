@@ -11,14 +11,12 @@ import os
 import time
 
 import pytest
-
 import qterminator.config as config_mod
 from qterminator.config import Config
-
 from qterminator.plugins.session_restoration import (
-    SessionRestorationPlugin, SESSION_FILE,
+    SESSION_FILE,
+    SessionRestorationPlugin,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -102,7 +100,8 @@ def test_save_session_uses_serialize_layout_round_trip(qtbot, tmp_path):
     meaningfully testable end-to-end.
     """
     from qterminator.plugins.session_restoration import (
-        SESSION_FILE, SessionRestorationPlugin,
+        SESSION_FILE,
+        SessionRestorationPlugin,
     )
     from qterminator.window import MainWindow
 

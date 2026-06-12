@@ -14,13 +14,13 @@ import time
 from unittest.mock import patch
 
 import pytest
-
 import qterminator.config as config_mod
 from qterminator.config import Config
 from qterminator.plugins.tmux_mode import (
-    TmuxModeService, TmuxModePlugin, _tmux_available,
+    TmuxModePlugin,
+    TmuxModeService,
+    _tmux_available,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

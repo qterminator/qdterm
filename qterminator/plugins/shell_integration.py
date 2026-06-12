@@ -49,7 +49,6 @@ from typing import Callable, Optional
 from qterminator.config import Config
 from qterminator.plugin import Plugin
 
-
 # ---------------------------------------------------------------------------
 # Data classes
 # ---------------------------------------------------------------------------
