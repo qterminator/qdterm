@@ -407,7 +407,7 @@ def test_enter_replay_requires_focused_terminal(qtbot):
 
     # Get the plugin
     pm = win._plugin_manager
-    plugin = pm._instances.get("instant_replay")
+    pm._instances.get("instant_replay")
 
     # Try to enter replay - it should work with a real window
     # and get the focused terminal

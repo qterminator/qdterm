@@ -574,7 +574,7 @@ def test_agent_control_list_tabs_reports_last_command(qtbot, window_with_agent_c
     # Locate the live terminal and ensure attachment.
     plugin = win._plugin_manager._instances.get("agent_control")
     term_widget = plugin._enumerate_terminals()[0]
-    history = svc.ensure_attached(term_widget)
+    svc.ensure_attached(term_widget)
     shadow = win.shadow_screens._shadows[id(term_widget)][0]
     shadow.feed(
         "\x1b]7;file://h/var/log\x1b\\"

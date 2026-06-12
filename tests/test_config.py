@@ -175,7 +175,6 @@ class TestTomlRoundtrip:
             import tomli as tomllib
         buf = io.StringIO()
         _write_toml(buf, data)
-        toml_bytes = buf.getvalue().encode()
         return tomllib.loads(buf.getvalue())
 
     def test_simple_values(self):
@@ -271,7 +270,6 @@ class TestConfigLayoutSaveLoad:
         """restore_layout parses JSON-encoded tab strings."""
         tab_dict = {"name": "Tab 1", "tree": {"type": "terminal", "working_directory": "/tmp", "group": None}}
         tab_str = json.dumps(tab_dict)
-        layout_data = {"tabs": [tab_str]}
         # Verify the string gets parsed back to a dict
         import ast
         parsed = json.loads(tab_str)

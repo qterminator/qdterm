@@ -76,9 +76,6 @@ class AlertOnMarkService:
 
     def _notify(self, terminal, record) -> None:
         """Send a desktop notification."""
-        cfg = Config()
-        sound = cfg.get("plugins", "alert_on_mark", "sound", default=True)
-
         # Build notification body
         exit_info = ""
         if record.exit_status is not None:

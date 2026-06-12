@@ -423,7 +423,7 @@ def test_plugin_deactivate_stops_polling():
 
 def test_plugin_default_disabled():
     """Test plugin is disabled by default."""
-    cfg = Config()
+    _cfg = Config()
     # Don't set enabled
 
     class FakeWin:

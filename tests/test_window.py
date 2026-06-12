@@ -1246,7 +1246,6 @@ class TestMiscellaneous:
     def test_new_window_does_not_crash(self, window, monkeypatch):
         """_new_window creates a new MainWindow without crash."""
         created = []
-        original_show = MainWindow.show
         monkeypatch.setattr(MainWindow, "show", lambda self: created.append(self))
         window._new_window()
         assert len(created) == 1

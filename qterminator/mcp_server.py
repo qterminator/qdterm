@@ -96,7 +96,7 @@ class AgentControlClient:
             }
             try:
                 self._conn.sendall((json.dumps(req) + "\n").encode("utf-8"))
-            except OSError as e:
+            except OSError:
                 # Connection died — try once to reconnect.
                 self._conn = None
                 self._ensure()

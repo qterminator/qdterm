@@ -663,7 +663,7 @@ def test_service_get_telemetry_history(terminal):
 
     svc = _build_service(window=_W(), display="off")
     svc.attach(shell_int)
-    history = shell_int.ensure_attached(terminal)
+    shell_int.ensure_attached(terminal)
     shadow = reg._shadows[id(terminal)][0]
 
     # Run 3 commands.

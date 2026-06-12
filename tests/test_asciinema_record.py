@@ -74,7 +74,7 @@ def _read_cast(path):
 def test_header_is_v3_with_required_fields(terminal, registry, tmp_path):
     svc = AsciinemaRecorderService(str(tmp_path), registry)
     cast = str(tmp_path / "a.cast")
-    rec = svc.start(terminal, path=cast)
+    svc.start(terminal, path=cast)
     svc.stop(terminal)
     header, _events = _read_cast(cast)
     assert header["version"] == ASCIICAST_VERSION == 3

@@ -112,7 +112,7 @@ class TestSplits:
             and all(t.height() > 0 for t in split.find_terminals()),
             timeout=2000,
         )
-        path = _save(window, "split_horizontal")
+        _save(window, "split_horizontal")
         terms = split.find_terminals()
         assert len(terms) == 2
         # Both should have nonzero height
@@ -127,7 +127,7 @@ class TestSplits:
             and all(t.width() > 0 for t in split.find_terminals()),
             timeout=2000,
         )
-        path = _save(window, "split_vertical")
+        _save(window, "split_vertical")
         terms = split.find_terminals()
         assert len(terms) == 2
         # Both should have nonzero width
@@ -141,7 +141,7 @@ class TestSplits:
         qtbot.waitUntil(lambda: len(split.find_terminals()) == 2, timeout=2000)
         window._split_vertical()
         qtbot.waitUntil(lambda: len(split.find_terminals()) == 3, timeout=2000)
-        path = _save(window, "three_way_split")
+        _save(window, "three_way_split")
         terms = split.find_terminals()
         assert len(terms) == 3
 
@@ -153,7 +153,7 @@ class TestTabs:
             lambda: window._tabs.count() == 2 and window._tab_bar.isVisible(),
             timeout=2000,
         )
-        path = _save(window, "two_tabs")
+        _save(window, "two_tabs")
         assert window._tab_bar.isVisible()
         assert window._tabs.count() == 2
 
@@ -162,7 +162,7 @@ class TestTabs:
         qtbot.waitUntil(lambda: window._tabs.count() == 2, timeout=2000)
         window._tabs.setCurrentIndex(0)
         qtbot.waitUntil(lambda: window._tabs.currentIndex() == 0, timeout=2000)
-        path = _save(window, "tab_switch")
+        _save(window, "tab_switch")
         assert window._tabs.currentIndex() == 0
 
 
@@ -176,7 +176,7 @@ class TestZoom:
             lambda: len([t for t in split.find_terminals() if t.isVisible()]) == 1,
             timeout=2000,
         )
-        path = _save(window, "zoomed")
+        _save(window, "zoomed")
         visible = [t for t in split.find_terminals() if t.isVisible()]
         assert len(visible) == 1
 
@@ -194,7 +194,7 @@ class TestZoom:
             lambda: len([t for t in split.find_terminals() if t.isVisible()]) == 2,
             timeout=2000,
         )
-        path = _save(window, "unzoomed")
+        _save(window, "unzoomed")
         visible = [t for t in split.find_terminals() if t.isVisible()]
         assert len(visible) == 2
 
@@ -205,7 +205,7 @@ class TestPreferences:
         dlg.show()
         qtbot.waitExposed(dlg)
         qtbot.waitUntil(lambda: dlg._tab_widget.count() == 3, timeout=2000)
-        path = _save(dlg, "preferences")
+        _save(dlg, "preferences")
         assert dlg._tab_widget.count() == 3
         dlg.close()
 
@@ -215,7 +215,7 @@ class TestPreferences:
         qtbot.waitExposed(dlg)
         dlg._tab_widget.setCurrentIndex(1)
         qtbot.waitUntil(lambda: dlg._tab_widget.currentIndex() == 1, timeout=2000)
-        path = _save(dlg, "preferences_behavior")
+        _save(dlg, "preferences_behavior")
         dlg.close()
 
     def test_shortcuts_tab(self, window, qtbot):
@@ -224,7 +224,7 @@ class TestPreferences:
         qtbot.waitExposed(dlg)
         dlg._tab_widget.setCurrentIndex(2)
         qtbot.waitUntil(lambda: dlg._tab_widget.currentIndex() == 2, timeout=2000)
-        path = _save(dlg, "preferences_shortcuts")
+        _save(dlg, "preferences_shortcuts")
         dlg.close()
 
 

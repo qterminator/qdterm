@@ -404,7 +404,6 @@ def test_icons_set_on_actions(window):
 
 def test_actions_have_correct_icon_theme_names(window):
     """Actions use the expected FreeDesktop icon theme names."""
-    requested = {}
     original_from_theme = QIcon.fromTheme
     call_order = []
 
@@ -473,8 +472,6 @@ class TestContextMenuIcons:
 
     def test_copy_has_icon(self, window):
         """Copy action has an icon (edit-copy)."""
-        menu = build_context_menu(window._active_terminal)
-        action = _find_action(menu, "Copy")
         # Icon may be null if theme doesn't have it, but it should be set
         # We verify via the fromTheme tracking approach
         requested = []

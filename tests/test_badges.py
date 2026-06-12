@@ -226,7 +226,6 @@ def test_plugin_refreshes_on_command_finished(qtbot):
     win.show()
     qtbot.waitExposed(win)
     qtbot.wait(60)
-    term = next(iter(win.badges.overlays))
     # Feed an OSC 133 ;A/;B/;C/;D;7 cycle so shell_integration records
     # an exit status, then assert the badge text reflects it.
     for tid, overlay in win.badges.overlays.items():

@@ -131,7 +131,7 @@ def restore_layout(window, layout_data):
             window._connect_terminal(terminal)
 
         tab_name = tab_data.get("name", "Terminal")
-        idx = window._tabs.addTab(split, tab_name)
+        window._tabs.addTab(split, tab_name)
 
         # Connect all terminals in the restored tree
         for terminal in split.find_terminals():

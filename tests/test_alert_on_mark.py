@@ -268,7 +268,7 @@ def test_plugin_deactivate_removes_service():
 
 def test_plugin_default_disabled():
     """Test that plugin is disabled by default."""
-    cfg = Config()
+    _cfg = Config()
     # Don't set enabled - should default to False
 
     class FakeWin:

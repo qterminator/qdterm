@@ -220,8 +220,6 @@ def test_long_command_notifier_no_notify_when_focused(qtbot, terminal, monkeypat
     notify_called = []
     import subprocess as sp_mod
 
-    orig_popen = sp_mod.Popen
-
     def mock_popen(*args, **kwargs):
         notify_called.append(args)
 
@@ -281,7 +279,6 @@ def test_error_detector_segfault_trigger(terminal):
 def test_error_detector_idempotent(terminal):
     """ErrorDetector only prefixes the title once per terminal."""
     plugin = ErrorDetector()
-    original_title = terminal._titlebar._title_label.text()
 
     plugin.on_snapshot(terminal, {"lines": ["ERROR: first"]})
     title_after_first = terminal._titlebar._title_label.text()

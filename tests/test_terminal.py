@@ -621,7 +621,7 @@ class TestSplitContainerSplit:
     def test_split_different_orientation_creates_nested(self, qtbot):
         s = _make_split(qtbot, Qt.Orientation.Horizontal)
         t1 = s.add_terminal()
-        t2 = s.add_terminal()
+        _t2 = s.add_terminal()
         # Now split t1 vertically -- different orientation with 2 children
         t3 = s.split(t1, Qt.Orientation.Vertical)
         assert t3 is not None
@@ -631,7 +631,7 @@ class TestSplitContainerSplit:
 
     def test_split_not_found_returns_none(self, qtbot):
         s = _make_split(qtbot)
-        t1 = s.add_terminal()
+        _t1 = s.add_terminal()
         orphan = _make_terminal(qtbot)
         result = s.split(orphan, Qt.Orientation.Horizontal)
         assert result is None
@@ -640,7 +640,7 @@ class TestSplitContainerSplit:
         s = _make_split(qtbot, Qt.Orientation.Horizontal)
         t1 = s.add_terminal()
         t2 = s.split(t1, Qt.Orientation.Horizontal)
-        t3 = s.split(t2, Qt.Orientation.Horizontal)
+        _t3 = s.split(t2, Qt.Orientation.Horizontal)
         terminals = s.find_terminals()
         assert len(terminals) == 3
 
@@ -665,7 +665,7 @@ class TestSplitContainerRemoveTerminal:
 
     def test_remove_not_found(self, qtbot):
         s = _make_split(qtbot)
-        t1 = s.add_terminal()
+        _t1 = s.add_terminal()
         orphan = _make_terminal(qtbot)
         result = s.remove_terminal(orphan)
         assert result is False
@@ -697,9 +697,9 @@ class TestSplitContainerFindTerminals:
     def test_find_terminals_nested_splits(self, qtbot):
         s = _make_split(qtbot, Qt.Orientation.Horizontal)
         t1 = s.add_terminal()
-        t2 = s.add_terminal()
+        _t2 = s.add_terminal()
         # Create nested split (different orientation with >1 children)
-        t3 = s.split(t1, Qt.Orientation.Vertical)
+        _t3 = s.split(t1, Qt.Orientation.Vertical)
         found = s.find_terminals()
         assert len(found) == 3
 
@@ -747,7 +747,7 @@ class TestSplitContainerFindNextTerminal:
 
     def test_find_next_unknown_terminal(self, qtbot):
         s = _make_split(qtbot)
-        t1 = s.add_terminal()
+        _t1 = s.add_terminal()
         orphan = _make_terminal(qtbot)
         result = s.find_next_terminal(orphan, "right")
         assert result is None
@@ -921,9 +921,9 @@ class TestSplitContainerDeepNesting:
     def test_three_level_nesting(self, qtbot):
         s = _make_split(qtbot, Qt.Orientation.Horizontal)
         t1 = s.add_terminal()
-        t2 = s.add_terminal()
+        _t2 = s.add_terminal()
         # First nested level: split t1 vertically
-        t3 = s.split(t1, Qt.Orientation.Vertical)
+        _t3 = s.split(t1, Qt.Orientation.Vertical)
         # Now find the nested container and split within it
         terminals = s.find_terminals()
         assert len(terminals) == 3
@@ -932,15 +932,15 @@ class TestSplitContainerDeepNesting:
         s = _make_split(qtbot, Qt.Orientation.Horizontal)
         t1 = s.add_terminal()
         t2 = s.add_terminal()
-        t3 = s.split(t1, Qt.Orientation.Vertical)
-        t4 = s.split(t2, Qt.Orientation.Vertical)
+        _t3 = s.split(t1, Qt.Orientation.Vertical)
+        _t4 = s.split(t2, Qt.Orientation.Vertical)
         terminals = s.find_terminals()
         assert len(terminals) == 4
 
     def test_remove_from_nested(self, qtbot):
         s = _make_split(qtbot, Qt.Orientation.Horizontal)
         t1 = s.add_terminal()
-        t2 = s.add_terminal()
+        _t2 = s.add_terminal()
         t3 = s.split(t1, Qt.Orientation.Vertical)
         # Remove the nested terminal
         s.remove_terminal(t3)
@@ -950,8 +950,8 @@ class TestSplitContainerDeepNesting:
     def test_navigation_through_nested(self, qtbot):
         s = _make_split(qtbot, Qt.Orientation.Horizontal)
         t1 = s.add_terminal()
-        t2 = s.add_terminal()
-        t3 = s.split(t1, Qt.Orientation.Vertical)
+        _t2 = s.add_terminal()
+        _t3 = s.split(t1, Qt.Orientation.Vertical)
         terminals = s.find_terminals()
         # Navigation should traverse all terminals in order
         for i, t in enumerate(terminals):

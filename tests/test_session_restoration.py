@@ -149,7 +149,6 @@ def test_restore_skips_old_session(tmp_path):
         _tabs = None
 
     win = FakeWindow()
-    plugin = SessionRestorationPlugin()
 
     # Create a mock tabs that we can check
     class MockTabs:

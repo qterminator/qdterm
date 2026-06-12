@@ -266,7 +266,7 @@ class UndoClosePlugin(Plugin):
             return
 
         if self._service.can_undo:
-            success = self._service.undo()
+            self._service.undo()
             # Could show feedback if needed
 
     def deactivate(self):

@@ -123,8 +123,6 @@ def test_repeat_fires_multiple_times(qtbot):
     # The _fire method uses task.start(task.repeat_delay) which passes to
     # QTimer.start(int(seconds * 1000)). So set repeat_delay=0.05 (int ok? No,
     # int() truncates to 0). We need to patch start() for this test.
-    original_start = task.start
-
     def fast_start(delay_seconds):
         # Use 50 ms regardless of requested delay
         from PyQt6.QtCore import QDateTime
