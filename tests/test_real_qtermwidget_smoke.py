@@ -69,29 +69,40 @@ def _has_screen_read_api(w):
 
     The SIP has NO screenGet/toPlainText; selectedText() alone only returns the
     current SELECTION. The only honest way to read the buffer is to select it
-    first (setSelectionStart/End) and then call selectedText(True). All three
-    must be present.
+    first (setSelectionStart/End) and then call selectedText(True). Bounding the
+    selection to the real extent additionally needs the screen geometry
+    (screenColumnsCount/screenLinesCount) -- without them an out-of-range end
+    would segfault, so we require all five.
     """
     return (
         hasattr(w, "setSelectionStart")
         and hasattr(w, "setSelectionEnd")
         and hasattr(w, "selectedText")
+        and hasattr(w, "screenColumnsCount")
+        and hasattr(w, "screenLinesCount")
     )
 
 
 def _read_full_screen(w):
     """Select the whole buffer and return its text via the real SIP.
 
-    Selects from the top of scrollback to far past the bottom (the binding
-    clamps), then reads selectedText(preserveLineBreaks=True). Bounded and
-    side-effect-free apart from leaving a selection; cannot hang. Returns "" on
-    any failure so callers degrade gracefully.
+    Selection rows are ABSOLUTE -- row 0 is the top of the scrollback, not the
+    top of the visible screen -- so the whole buffer is (0, 0) to the last cell
+    (history + visible_rows - 1, columns). The end MUST be bounded to that real
+    extent: QTermWidget 2.4.0's selectedText() does NOT clamp an out-of-range
+    selection end, it SEGFAULTS (walks past the allocated screen image). Bounded
+    and side-effect-free apart from leaving a selection; cannot hang. Returns ""
+    on any failure (or if the geometry getters are absent) so callers degrade
+    gracefully.
     """
     try:
         history = int(getattr(w, "historyLinesCount", lambda: 0)() or 0)
-        # SIP order: setSelectionStart(int row, int column).
-        w.setSelectionStart(-history, 0)
-        w.setSelectionEnd(100000, 100000)
+        cols = int(getattr(w, "screenColumnsCount", lambda: 0)() or 0)
+        rows = int(getattr(w, "screenLinesCount", lambda: 0)() or 0)
+        if cols <= 0 or rows <= 0:
+            return ""
+        w.setSelectionStart(0, 0)
+        w.setSelectionEnd(history + rows - 1, cols)
         return w.selectedText(True) or ""
     except Exception:
         return ""

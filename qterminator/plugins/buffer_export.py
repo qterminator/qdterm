@@ -204,21 +204,36 @@ class BufferExportPlugin(MenuProvider):
         term = terminal._term
         try:
             # Best-effort: ask for the entire screen + history range.
-            if hasattr(term, "setSelectionStart") and hasattr(term, "setSelectionEnd"):
+            if (
+                hasattr(term, "setSelectionStart")
+                and hasattr(term, "setSelectionEnd")
+                and hasattr(term, "screenColumnsCount")
+                and hasattr(term, "screenLinesCount")
+            ):
                 history = 0
                 if hasattr(term, "historyLinesCount"):
                     try:
                         history = int(term.historyLinesCount())
                     except Exception:
                         history = 0
-                term.setSelectionStart(0, -history)
-                # A large column count covers any line length.
-                term.setSelectionEnd(100000, 100000)
-                text = term.selectedText()
-                if hasattr(term, "clearSelection"):
-                    term.clearSelection()
-                if text:
-                    return text
+                cols = int(term.screenColumnsCount())
+                rows = int(term.screenLinesCount())
+                if cols > 0 and rows > 0:
+                    # Select the whole buffer. Selection rows are ABSOLUTE
+                    # (row 0 is the top of the scrollback), so the last cell is
+                    # (history + visible_rows - 1, columns). The end MUST be
+                    # bounded to the real extent: QTermWidget's selectedText()
+                    # SEGFAULTS on an out-of-range selection end (it walks past
+                    # the allocated screen image), so the old (100000, 100000)
+                    # end crashed the app on the real SIP binding. Relies on the
+                    # screenLinesCount() binding added to the vendored SIP.
+                    term.setSelectionStart(0, 0)
+                    term.setSelectionEnd(history + rows - 1, cols)
+                    text = term.selectedText()
+                    if hasattr(term, "clearSelection"):
+                        term.clearSelection()
+                    if text:
+                        return text
         except Exception:
             pass
         return terminal.selected_text() or ""

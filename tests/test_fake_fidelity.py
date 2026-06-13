@@ -21,9 +21,9 @@ We are careful about PROVENANCE. The asserted methods are split into:
   * SIP_CONTRACT_METHODS -- called by the app AND present in the SIP; the fake
     mirrors the real binding's surface.
   * FAKE_ONLY_APP_METHODS -- called by the app only behind ``hasattr()`` guards
-    and NOT present in this SIP (e.g. ``screenLinesCount``). The fake provides
-    them so the guarded paths run under test, but we do NOT claim they are part
-    of the real binding contract.
+    and NOT present in this SIP (currently none). The fake provides them so the
+    guarded paths run under test, but we do NOT claim they are part of the real
+    binding contract.
 
 We deliberately do not assert SIP methods the app never calls
 (setFlowControlEnabled, setEnvironment, getPtySlaveFd, setMotionAfterPasting,
@@ -131,6 +131,9 @@ SIP_CONTRACT_METHODS = {
     # scrollback export (buffer_export / pdf_export). In the SIP and called
     # by the app (behind hasattr() guards).
     "historyLinesCount": "export reads scrollback length",
+    "screenLinesCount": "export bounds the whole-buffer selection to the "
+                        "visible-row count (out-of-range ends segfault the real "
+                        "binding); also screenshot.py reads visible rows",
     "setSelectionStart": "buffer/pdf export selects the whole buffer",
     "setSelectionEnd": "buffer/pdf export selects the whole buffer",
 }
@@ -138,10 +141,9 @@ SIP_CONTRACT_METHODS = {
 # Methods the app calls only behind hasattr() guards and that are NOT in the
 # QTermWidget SIP -- the fake provides them so the guarded paths run under test,
 # but they are fake-only convenience helpers, not part of the binding contract.
-FAKE_ONLY_APP_METHODS = {
-    "screenLinesCount": "screenshot.py reads visible-rows count (hasattr-guarded; "
-                        "absent from the SIP)",
-}
+# (Currently none: screenLinesCount moved into SIP_CONTRACT_METHODS once it was
+# added to the vendored SIP so the export select-all could be bounded safely.)
+FAKE_ONLY_APP_METHODS = {}
 
 APP_CALLED_METHODS = {**SIP_CONTRACT_METHODS, **FAKE_ONLY_APP_METHODS}
 
@@ -252,16 +254,21 @@ def test_selection_methods_record_intent(qtbot):
     semantics."""
     w = QTermWidget.QTermWidget(0)
     qtbot.addWidget(w)
-    # Mirror buffer_export.py / pdf_export.py exactly.
+    # Mirror buffer_export.py / pdf_export.py exactly: select the whole buffer
+    # from the absolute top (row 0 = top of scrollback) to the last real cell,
+    # (history + visible_rows - 1, columns). The end is BOUNDED to the real
+    # extent on purpose -- an out-of-range end segfaults the real binding.
     history = int(w.historyLinesCount())
-    w.setSelectionStart(0, -history)
-    w.setSelectionEnd(100000, 100000)
+    cols = int(w.screenColumnsCount())
+    rows = int(w.screenLinesCount())
+    w.setSelectionStart(0, 0)
+    w.setSelectionEnd(history + rows - 1, cols)
     # The fake must record the args in SIP (row, column) order, not inverted.
-    assert w._selection_start == (0, -history)
-    assert w._selection_end == (100000, 100000)
-    # screenLinesCount is a fake-only (hasattr-guarded) helper; it must still
-    # return a positive visible-row count for the screenshot path.
-    assert int(w.screenLinesCount()) > 0
+    assert w._selection_start == (0, 0)
+    assert w._selection_end == (history + rows - 1, cols)
+    # screenLinesCount is part of the SIP contract; it must return a positive
+    # visible-row count so the export select-all can be bounded.
+    assert rows > 0
 
 
 def test_no_obvious_signature_mismatch_for_send_text(qtbot):

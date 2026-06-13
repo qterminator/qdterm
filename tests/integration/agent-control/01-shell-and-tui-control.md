@@ -183,11 +183,11 @@ Restore the original config if the runner mutated it (Setup writes
   covers the compositor input path; this host-level scenario is the
   protocol contract.
 - **Screen-state implementation.** The QTermWidget Python binding
-  exposes neither cursor position nor a screen-lines accessor (only
-  `screenColumnsCount` and `historyLinesCount`; no `screenLinesCount`,
-  no `cursorRow/Col`). The plugin therefore maintains its own shadow
-  screen by feeding `receivedData` into a `pyte.Screen` and reads
-  `screen.display` / `screen.cursor` for the RPC response. The raw
+  exposes terminal geometry (`screenColumnsCount`, `screenLinesCount`,
+  `historyLinesCount`) but no cursor position or screen-content accessor
+  (no `cursorRow/Col`, no per-cell read). The plugin therefore maintains
+  its own shadow screen by feeding `receivedData` into a `pyte.Screen`
+  and reads `screen.display` / `screen.cursor` for the RPC response. The raw
   stream surface comes from the same `receivedData` signal, before
   pyte processes it. If pyte is unavailable at import time the plugin
   must fail to load (not silently degrade) so `get_screen` never

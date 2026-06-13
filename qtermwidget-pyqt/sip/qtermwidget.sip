@@ -63,6 +63,7 @@ public:
     void setMotionAfterPasting(int);
     int historyLinesCount();
     int screenColumnsCount();
+    int screenLinesCount();
     void setSelectionStart(int row, int column);
     void setSelectionEnd(int row, int column);
     void getSelectionStart(int& row, int& column);

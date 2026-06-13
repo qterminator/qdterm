@@ -31,6 +31,12 @@ class FakeInnerTerm(QWidget):
     def historyLinesCount(self):
         return 0
 
+    def screenColumnsCount(self):
+        return 80
+
+    def screenLinesCount(self):
+        return 24
+
 
 class FakeTerminal(QWidget):
     def __init__(self, title="term"):
