@@ -27,6 +27,19 @@ from qterminator.plugin import Plugin
 SESSION_SCHEMA_VERSION = 1
 
 
+class _SessionFilePath(os.PathLike):
+    """Path-like session file reference resolved at use time."""
+
+    def __fspath__(self):
+        return session_file_path()
+
+    def __str__(self):
+        return session_file_path()
+
+    def __repr__(self):
+        return repr(session_file_path())
+
+
 def session_file_path() -> str:
     """Return the absolute path of session.json under the current CONFIG_DIR.
 
@@ -36,12 +49,13 @@ def session_file_path() -> str:
     return os.path.join(config_mod.CONFIG_DIR, "session.json")
 
 
+SESSION_FILE = _SessionFilePath()
+
+
 def __getattr__(name):
-    # Keep ``SESSION_FILE`` working as a module attribute for callers
-    # that import it directly; resolves through ``session_file_path``
-    # so monkeypatched CONFIG_DIR is honored at attribute-access time.
+    # Compatibility for older module-level attribute lookups.
     if name == "SESSION_FILE":
-        return session_file_path()
+        return SESSION_FILE
     raise AttributeError(name)
 
 
@@ -243,5 +257,3 @@ class SessionRestorationPlugin(Plugin):
                 pass
         self._original_close = None
         self._window = None
-
-
