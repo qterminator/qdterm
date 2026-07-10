@@ -2,8 +2,6 @@
 
 A Qt port of the [Terminator](https://github.com/gnome-terminator/terminator) terminal emulator, built with PyQt6 and QTermWidget.
 
-![screenshot](screenshots/main.png)
-
 ## Role in qdistro
 
 qterminator is the first-party terminal for qdistro. It gives the owner a
@@ -36,7 +34,10 @@ is considered usable.
 - **Activity monitor** -- watch terminals for new output or prolonged silence
 - **Scrollback navigation** -- Shift+PgUp/PgDown for scrollback
 - **Visual bell** -- visual flash on terminal bell
-- **Keyboard shortcuts** -- 50+ shortcuts for every common operation
+- **Keyboard shortcuts** -- bindable shortcuts for every common operation (see the tables below)
+- **Agent control** -- `qterminator-mcp` exposes the terminal to coding agents
+  as an MCP (Model Context Protocol) server; `qterminator-shell-integration`
+  installs the shell-side hooks
 
 ## Installation
 
@@ -85,9 +86,6 @@ sudo zypper install \
 # Optional but recommended
 sudo zypper install $PY-setproctitle libnotify-tools tmux xdg-utils
 ```
-
-Verified package versions on Tumbleweed (April 2026):
-PyQt6 6.10, qtermwidget 2.3.0, gcc 15, cmake 4.2, pyqt-builder 1.19, pytest 9.0, pytest-qt 4.5.
 
 #### Ubuntu 24.04 / Debian 13
 
@@ -354,47 +352,27 @@ class ErrorAlert(OutputWatcher):
 ### Running tests
 
 ```bash
-# With a display server (Wayland or X11)
-python3 -m pytest tests/ -v
+just test        # per-file subprocess isolation, offscreen (preferred)
+just lint        # ruff
 
-# Headless (CI or no display)
+# Or directly:
 QT_QPA_PLATFORM=offscreen python3 -m pytest tests/ -v
 ```
 
-The test suite contains 115 tests covering configuration, CLI parsing, context menus, GUI rendering, layout serialization, the plugin system, preferences, terminal widgets, and window management.
+The test suite covers configuration, CLI parsing, context menus, GUI
+rendering, layout serialization, the plugin system, preferences, terminal
+widgets, and window management.
 
 ### Project structure
 
-```
-qterminator/
-  __init__.py          Package init
-  __main__.py          Entry point and CLI argument parsing
-  config.py            TOML config system with profile support
-  context_menu.py      Right-click context menu
-  layout.py            Layout serialization and restore
-  plugin.py            Plugin base classes and manager
-  preferences.py       Preferences dialog (PyQt6)
-  splitter.py          Recursive QSplitter for split panes
-  terminal.py          Terminal widget wrapping QTermWidget
-  theme.py             Dark theme palette and stylesheet
-  titlebar.py          Per-terminal titlebar with indicators
-  window.py            Main window, tabs, and shortcuts
-  plugins/
-    url_handlers.py    HTTP/file/email URL detection
-    custom_commands.py User-defined commands
-    logger.py          Terminal output logging
-    terminal_screenshot.py  Save terminal as PNG
-tests/
-  test_cli.py          CLI argument parsing
-  test_config.py       Config read/write/profiles
-  test_context_menu.py Menu structure and items
-  test_gui_visual.py   Visual tests with real event loop
-  test_layout.py       Layout serialize/restore roundtrip
-  test_plugin.py       Plugin discovery/loading/URL patterns
-  test_preferences.py  Preferences dialog apply
-  test_terminal.py     Terminal widget and splitter
-  test_window.py       Tabs, splits, zoom, shortcuts, features
-```
+The `qterminator/` package holds the app: entry point and CLI parsing
+(`__main__.py`), the TOML config system (`config.py`), the terminal widget and
+recursive splitter (`terminal.py`, `splitter.py`), window/tab/shortcut
+management (`window.py`), the plugin manager and base classes (`plugin.py`),
+the MCP server and shell integration (`mcp_server.py`,
+`shell_integration_cli.py`), and built-in plugins under
+`qterminator/plugins/`. Tests live in `tests/`, one `test_*.py` per area,
+mirroring the module names.
 
 ## License
 
