@@ -4,6 +4,7 @@ import base64
 import os
 import socket
 import struct
+import urllib.error
 import urllib.request
 
 import pytest
@@ -87,10 +88,102 @@ def test_tmux_web_share_serves_browser_page():
     svc = TmuxWebShareService(bind="127.0.0.1", read_only=True)
     share = svc.start_share("qterm-1")
     try:
+        # The share URL carries the per-share capability token.
+        assert f"?t={share.token}" in share.url
+        assert len(share.token) >= 32
         with urllib.request.urlopen(share.url, timeout=2) as resp:
             body = resp.read().decode("utf-8")
+            # The bearer token must not leak via Referer or shared caches.
+            assert resp.headers.get("Referrer-Policy") == "no-referrer"
+            assert resp.headers.get("Cache-Control") == "no-store"
         assert "QTerminator tmux share" in body
         assert "WebSocket" in body
+    finally:
+        svc.stop_all()
+
+
+def _raw_status(share, path, *, extra_headers="") -> str:
+    """Send a raw WS upgrade for ``path`` and return the HTTP status line."""
+    key = base64.b64encode(os.urandom(16)).decode("ascii")
+    sock = socket.create_connection(("127.0.0.1", share.port), timeout=2)
+    sock.settimeout(2)
+    try:
+        sock.sendall((
+            f"GET {path} HTTP/1.1\r\n"
+            f"Host: 127.0.0.1:{share.port}\r\n"
+            "Upgrade: websocket\r\n"
+            "Connection: Upgrade\r\n"
+            f"{extra_headers}"
+            f"Sec-WebSocket-Key: {key}\r\n"
+            "Sec-WebSocket-Version: 13\r\n\r\n"
+        ).encode("ascii"))
+        head, _ = _read_ws_headers(sock)
+        return head.splitlines()[0]
+    finally:
+        sock.close()
+
+
+def test_web_page_requires_token():
+    """J7: fetching the page without the token is refused (404) — the URL
+    itself is the capability, so a port-scanning drive-by learns nothing."""
+    svc = TmuxWebShareService(bind="127.0.0.1", read_only=True)
+    share = svc.start_share("qterm-1")
+    try:
+        base = f"http://127.0.0.1:{share.port}/"
+        with pytest.raises(urllib.error.HTTPError) as ei:
+            urllib.request.urlopen(base, timeout=2)
+        assert ei.value.code == 404
+    finally:
+        svc.stop_all()
+
+
+def test_websocket_upgrade_requires_token():
+    """J7: a /ws upgrade with no token is rejected even on loopback — closes
+    unauthenticated keystroke injection / frame reads by a drive-by page."""
+    svc = TmuxWebShareService(bind="127.0.0.1", read_only=False)
+    share = svc.start_share("qterm-1")
+    try:
+        assert "403" in _raw_status(share, "/ws")
+        assert "403" in _raw_status(share, "/ws?t=wrong-token")
+        # Correct token still upgrades.
+        assert "101" in _raw_status(share, f"/ws?t={share.token}")
+    finally:
+        svc.stop_all()
+
+
+def test_websocket_upgrade_rejects_cross_origin():
+    """J7: a cross-origin Origin header is rejected even with a valid token —
+    WebSockets bypass the same-origin policy, so this blocks browser CSRF."""
+    svc = TmuxWebShareService(bind="127.0.0.1", read_only=True)
+    share = svc.start_share("qterm-1")
+    try:
+        path = f"/ws?t={share.token}"
+        assert "403" in _raw_status(
+            share, path, extra_headers="Origin: http://evil.example\r\n")
+        # The classic origin-check bypass: a sandboxed/redirect-laundered
+        # opaque origin sends the literal string "null" — must be rejected.
+        assert "403" in _raw_status(
+            share, path, extra_headers="Origin: null\r\n")
+        # Same-origin (Origin == Host) is accepted.
+        assert "101" in _raw_status(
+            share, path,
+            extra_headers=f"Origin: http://127.0.0.1:{share.port}\r\n")
+    finally:
+        svc.stop_all()
+
+
+def test_websocket_same_origin_still_needs_token():
+    """The origin gate and the token gate are independent: a same-origin
+    request with a wrong/absent token is still rejected."""
+    svc = TmuxWebShareService(bind="127.0.0.1", read_only=True)
+    share = svc.start_share("qterm-1")
+    try:
+        same_origin = f"Origin: http://127.0.0.1:{share.port}\r\n"
+        assert "403" in _raw_status(
+            share, "/ws?t=wrong", extra_headers=same_origin)
+        assert "403" in _raw_status(share, "/ws", extra_headers=same_origin)
+        # A non-ASCII token can never match and must not crash the handler.
+        assert "403" in _raw_status(share, "/ws?t=%ff%fe")
     finally:
         svc.stop_all()
 
@@ -151,7 +244,7 @@ def test_websocket_roundtrip_sends_input_to_tmux(monkeypatch):
         sock.settimeout(2)
         try:
             req = (
-                "GET /ws HTTP/1.1\r\n"
+                f"GET /ws?t={share.token} HTTP/1.1\r\n"
                 f"Host: 127.0.0.1:{share.port}\r\n"
                 "Upgrade: websocket\r\n"
                 "Connection: Upgrade\r\n"
@@ -191,7 +284,7 @@ def test_websocket_read_only_drops_input(monkeypatch):
         sock.settimeout(2)
         try:
             sock.sendall((
-                "GET /ws HTTP/1.1\r\n"
+                f"GET /ws?t={share.token} HTTP/1.1\r\n"
                 f"Host: 127.0.0.1:{share.port}\r\n"
                 "Upgrade: websocket\r\n"
                 "Connection: Upgrade\r\n"
@@ -771,13 +864,14 @@ def test_verify_ed25519_malformed_pubkey():
 # Ed25519 WebSocket auth: full integration tests
 # ---------------------------------------------------------------------------
 
-def _ws_connect_and_upgrade(port: int) -> tuple[socket.socket, str, bytes]:
+def _ws_connect_and_upgrade(port: int, token: str = "") -> tuple[socket.socket, str, bytes]:
     """Open a raw WebSocket connection, return (sock, headers, leftover)."""
     key = base64.b64encode(os.urandom(16)).decode("ascii")
     sock = socket.create_connection(("127.0.0.1", port), timeout=3)
     sock.settimeout(3)
+    path = f"/ws?t={token}" if token else "/ws"
     req = (
-        "GET /ws HTTP/1.1\r\n"
+        f"GET {path} HTTP/1.1\r\n"
         f"Host: 127.0.0.1:{port}\r\n"
         "Upgrade: websocket\r\n"
         "Connection: Upgrade\r\n"
@@ -817,7 +911,7 @@ def test_auth_challenge_response_valid_key(monkeypatch, tmp_path):
     share.server.auth_required = True
     share.server.authorized_keys = svc._authorized_keys
     try:
-        sock, headers, rest = _ws_connect_and_upgrade(share.port)
+        sock, headers, rest = _ws_connect_and_upgrade(share.port, share.token)
         try:
             assert "101 Switching Protocols" in headers
             # First message should be AUTH_CHALLENGE
@@ -881,7 +975,7 @@ def test_auth_rejects_invalid_signature(monkeypatch, tmp_path):
     share.server.auth_required = True
     share.server.authorized_keys = svc._authorized_keys
     try:
-        sock, headers, rest = _ws_connect_and_upgrade(share.port)
+        sock, headers, rest = _ws_connect_and_upgrade(share.port, share.token)
         try:
             challenge_msg = _recv_ws_text(sock, rest)
             assert challenge_msg.startswith("AUTH_CHALLENGE ")
@@ -923,7 +1017,7 @@ def test_auth_rejects_unauthorized_key(monkeypatch, tmp_path):
     share.server.auth_required = True
     share.server.authorized_keys = svc._authorized_keys
     try:
-        sock, headers, rest = _ws_connect_and_upgrade(share.port)
+        sock, headers, rest = _ws_connect_and_upgrade(share.port, share.token)
         try:
             challenge_msg = _recv_ws_text(sock, rest)
             assert challenge_msg.startswith("AUTH_CHALLENGE ")
@@ -959,7 +1053,7 @@ def test_loopback_share_skips_auth(monkeypatch):
     svc = TmuxWebShareService(bind="127.0.0.1", read_only=False)
     share = svc.start_share("qterm-local")
     try:
-        sock, headers, rest = _ws_connect_and_upgrade(share.port)
+        sock, headers, rest = _ws_connect_and_upgrade(share.port, share.token)
         try:
             assert "101 Switching Protocols" in headers
             # First message should be terminal output, NOT AUTH_CHALLENGE

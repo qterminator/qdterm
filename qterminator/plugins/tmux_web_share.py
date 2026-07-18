@@ -6,6 +6,7 @@ import base64
 import hashlib
 import hmac
 import os
+import secrets
 import select
 import socket
 import struct
@@ -13,6 +14,7 @@ import subprocess
 import threading
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, urlsplit
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
@@ -143,7 +145,9 @@ body { margin: 0; background: #111; color: #ddd; font: 14px/1.25 monospace; }
 <script>
 const term = document.getElementById("term");
 const authMsg = document.getElementById("auth-msg");
-const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
+// Carry the per-share token (in this page's query string) onto the WS
+// upgrade — the server rejects a /ws upgrade without it.
+const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws${location.search}`);
 let authenticated = false;
 let authRequired = false;
 ws.onmessage = (ev) => {
@@ -275,14 +279,71 @@ class _WebHandler(BaseHTTPRequestHandler):
     def log_message(self, _fmt, *_args):
         return
 
+    def _token_ok(self) -> bool:
+        """True if the request carries the share's per-URL token.
+
+        The token is an unguessable capability minted per share
+        (``secrets.token_urlsafe``). It gates BOTH serving the page and the
+        WS upgrade, including on loopback — so a drive-by page that guesses
+        the ephemeral port still cannot open a live terminal stream (read)
+        nor inject keystrokes (write). Compared in constant time."""
+        want = getattr(self.server, "token", "")
+        if not want:
+            return True
+        got = parse_qs(urlsplit(self.path).query).get("t", [""])[0]
+        # The token is urlsafe-base64 ASCII; a non-ASCII ``t`` (e.g. a
+        # percent-escaped ``%ff``) can never match, and hmac.compare_digest
+        # raises TypeError on non-ASCII str — so reject early, fail closed.
+        if not got.isascii():
+            return False
+        return hmac.compare_digest(got, want)
+
+    def _origin_ok(self) -> bool:
+        """Reject a WS upgrade carrying a *cross-origin* ``Origin`` header.
+
+        WebSocket connections are NOT covered by the same-origin policy, so
+        a malicious page in any browser can open ``ws://127.0.0.1:<port>/ws``
+        and read live terminal frames. Browsers always attach an ``Origin``
+        on the WS handshake, so we require it to match our own ``Host``. A
+        missing ``Origin`` means a non-browser client (CLI/programmatic),
+        which the token already gates.
+
+        This is defense-in-depth; the per-share token is the load-bearing
+        control (a DNS-rebinding attacker can forge a matching Origin/Host
+        pair but still lacks the token). We compare the *authority* only
+        (not the scheme) on purpose, so the share keeps working behind a
+        TLS-terminating reverse proxy (browser Origin ``https://host`` vs the
+        proxied ``Host``). An empty authority — e.g. ``Origin: null`` from a
+        sandboxed iframe or a redirect-laundered origin — is rejected."""
+        origin = self.headers.get("Origin")
+        if origin is None:
+            return True
+        netloc = urlsplit(origin).netloc
+        return bool(netloc) and netloc.lower() == self.headers.get(
+            "Host", "").lower()
+
     def do_GET(self):
         if self.headers.get("Upgrade", "").lower() == "websocket":
+            # Two independent barriers before any upgrade: same-origin
+            # (blocks drive-by browser CSRF) AND the per-share token.
+            if not self._origin_ok() or not self._token_ok():
+                self.send_error(403)
+                return
             self._websocket()
+            return
+        # The page itself is a capability: without the token we don't even
+        # confirm a share exists here.
+        if not self._token_ok():
+            self.send_error(404)
             return
         body = _HTML.encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
+        # The URL carries the bearer token — keep it out of Referer headers
+        # and shared caches (defense-in-depth for the capability token).
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
 
@@ -404,12 +465,14 @@ class WebShare:
     read_only: bool
     server: ThreadingHTTPServer
     thread: threading.Thread
+    token: str = ""
     stopped: bool = False
 
     @property
     def url(self) -> str:
         host = "127.0.0.1" if self.bind == "0.0.0.0" else self.bind
-        return f"http://{host}:{self.port}/"
+        base = f"http://{host}:{self.port}/"
+        return f"{base}?t={self.token}" if self.token else base
 
     def stop(self):
         self.stopped = True
@@ -423,11 +486,13 @@ class _ShareHTTPServer(ThreadingHTTPServer):
 
     def __init__(self, addr, handler, share, *,
                  auth_required: bool = False,
-                 authorized_keys: list[Ed25519PublicKey] | None = None):
+                 authorized_keys: list[Ed25519PublicKey] | None = None,
+                 token: str = ""):
         super().__init__(addr, handler)
         self.share = share
         self.auth_required = auth_required
         self.authorized_keys: list[Ed25519PublicKey] = authorized_keys or []
+        self.token = token
 
 
 _LOOPBACK_BINDS = frozenset({"127.0.0.1", "::1", "localhost"})
@@ -459,6 +524,10 @@ class TmuxWebShareService:
 
     def start_share(self, session: str, port: int = 0) -> WebShare:
         port = port or _free_tcp_port(self.bind)
+        # Per-share capability token: required to fetch the page and to open
+        # the WS upgrade, even on loopback (closes the unauthenticated
+        # drive-by read/keystroke-injection vector on 127.0.0.1).
+        token = secrets.token_urlsafe(32)
         placeholder = type("_PendingShare", (), {
             "session": session,
             "bind": self.bind,
@@ -470,6 +539,7 @@ class TmuxWebShareService:
             (self.bind, port), _WebHandler, placeholder,
             auth_required=self._auth_required,
             authorized_keys=self._authorized_keys,
+            token=token,
         )
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         share = WebShare(
@@ -479,6 +549,7 @@ class TmuxWebShareService:
             read_only=self.read_only,
             server=server,
             thread=thread,
+            token=token,
         )
         server.share = share
         thread.start()
