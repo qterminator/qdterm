@@ -64,6 +64,28 @@ def _wait_for_state(pid, expected, timeout=1.0):
     return False
 
 
+# Liveness bound for "the signal killed the child", NOT a performance
+# assertion. `Popen.wait(timeout=...)` measures its deadline in the PARENT: it
+# busy-polls waitpid(WNOHANG) and raises TimeoutExpired once the parent's own
+# clock passes the deadline. So on a contended host the parent can be
+# descheduled past the deadline while the child has already died, and the test
+# reports a product failure for host contention. That is exactly how
+# test_interrupt_signal failed once in a `qci full` run whose GUI lane had 7
+# concurrent qemu VMs (peak loadavg 3.23) — while the signal itself was never
+# in doubt: Popen() blocks on the exec errpipe, so the child has already exec'd
+# `sleep` with SIGINT at SIG_DFL by the time the test signals it.
+#
+# 10s costs nothing on the happy path (wait() returns as soon as the child is
+# reaped, in ~1ms) and removes the contention sensitivity.
+SIGNAL_DEATH_TIMEOUT = 10
+
+
+def _assert_signaled_death(proc, expected_returncodes):
+    """Assert proc died from a signal, tolerating a starved parent clock."""
+    assert proc.wait(timeout=SIGNAL_DEATH_TIMEOUT) is not None
+    assert proc.returncode in expected_returncodes
+
+
 @pytest.fixture
 def sleep_proc():
     """Spawn a real `sleep 60` and guarantee cleanup."""
@@ -109,24 +131,21 @@ def test_suspend_resume_real_process(sleep_proc):
 def test_kill_signal_terminates(sleep_proc):
     pid = sleep_proc.pid
     os.kill(pid, signal.SIGKILL)
-    assert sleep_proc.wait(timeout=2) is not None
     # On Linux SIGKILL exits with -9
-    assert sleep_proc.returncode == -signal.SIGKILL
+    _assert_signaled_death(sleep_proc, (-signal.SIGKILL,))
 
 
 def test_terminate_signal(sleep_proc):
     pid = sleep_proc.pid
     os.kill(pid, signal.SIGTERM)
-    assert sleep_proc.wait(timeout=2) is not None
-    assert sleep_proc.returncode == -signal.SIGTERM
+    _assert_signaled_death(sleep_proc, (-signal.SIGTERM,))
 
 
 def test_interrupt_signal(sleep_proc):
     pid = sleep_proc.pid
     os.kill(pid, signal.SIGINT)
-    assert sleep_proc.wait(timeout=2) is not None
     # sleep exits from SIGINT
-    assert sleep_proc.returncode in (-signal.SIGINT, 130)
+    _assert_signaled_death(sleep_proc, (-signal.SIGINT, 130))
 
 
 # ---------------------------------------------------------------------------
@@ -209,7 +228,8 @@ def test_plugin_send_signal_to_process_group(plugin):
         term = FakeTerminal(fg_pid=parent.pid, shell_pid=os.getpid())
         plugin._send_signal(term, parent.pid, signal.SIGKILL, "Killed")
         # Both parent and its child should die because killpg hits the group
-        assert parent.wait(timeout=2) is not None
+        # (same parent-clock caveat as SIGNAL_DEATH_TIMEOUT above)
+        assert parent.wait(timeout=SIGNAL_DEATH_TIMEOUT) is not None
     finally:
         try:
             parent.kill()
