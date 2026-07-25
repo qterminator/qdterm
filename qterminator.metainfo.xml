@@ -44,8 +44,8 @@
     <keyword>command line</keyword>
     <keyword>tty</keyword>
   </keywords>
-  <url type="homepage">https://github.com/jankotek/qterminator</url>
-  <url type="bugtracker">https://github.com/jankotek/qterminator/issues</url>
+  <url type="homepage">https://github.com/qterminator/qdterm</url>
+  <url type="bugtracker">https://github.com/qterminator/qdterm/issues</url>
   <developer_name>Jan Kotek</developer_name>
   <update_contact>jan_AT_kotek.net</update_contact>
   <content_rating type="oars-1.1"/>

@@ -75,7 +75,7 @@ jobs:
             --license GPL-3.0-only \
             --vendor "Jan Kotek" \
             --maintainer "jan@kotek.net" \
-            --url "https://github.com/jankotek/qterminator" \
+            --url "https://github.com/qterminator/qdterm" \
             --description "Qt terminal emulator with splits, tabs, and plugin system" \
             --architecture all \
             --depends "python3 (>= 3.10)" \
@@ -168,7 +168,7 @@ jobs:
             --license "GPL-3.0-only" \
             --vendor "Jan Kotek" \
             --maintainer "jan@kotek.net" \
-            --url "https://github.com/jankotek/qterminator" \
+            --url "https://github.com/qterminator/qdterm" \
             --description "Qt terminal emulator with splits, tabs, and plugin system" \
             --architecture noarch \
             --rpm-summary "Qt terminal emulator" \
