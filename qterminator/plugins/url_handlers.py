@@ -51,7 +51,7 @@ class IssueTrackerHandler(URLHandler):
     Configure in config.toml:
         [plugins.issue_tracker]
         patterns = [
-            { prefix = "QTERM", url = "https://github.com/jankotek/qterminator/issues/{id}" },
+            { prefix = "QTERM", url = "https://github.com/qterminator/qdterm/issues/{id}" },
             { prefix = "JIRA", url = "https://jira.example.com/browse/{prefix}-{id}" },
         ]
 
